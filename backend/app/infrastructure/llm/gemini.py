@@ -18,7 +18,6 @@ import time
 from typing import Any
 
 from app.application.ports.llm import LLMProvider, LLMTimeoutError, ProviderError
-from app.config import get_settings
 from app.domain.claim import DocumentInput, DocumentType, ExtractedDocument, LineItem
 from app.domain.cost import LLMUsage, estimate_usd
 
@@ -56,10 +55,9 @@ Respond with the JSON object only, no commentary, no markdown fences.
 class GeminiProvider(LLMProvider):
     name = "gemini"
 
-    def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
-        s = get_settings()
-        self.api_key = api_key or s.gemini_api_key
-        self.model_name = model or s.gemini_model
+    def __init__(self, *, api_key: str, model: str) -> None:
+        self.api_key = api_key
+        self.model_name = model
         if not self.api_key:
             raise ProviderError("GEMINI_API_KEY not set")
         try:
