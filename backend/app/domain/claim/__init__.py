@@ -135,6 +135,41 @@ class ClaimState(BaseModel):
     early_stop_user_message: str | None = None
     deliberation_iterations: dict[str, int] = Field(default_factory=dict)
     decision: Optional["Decision"] = None
+    pending_events: list["DomainEvent"] = Field(default_factory=list, exclude=True)
+    """Domain events recorded during this run. Excluded from serialisation
+    so the persisted JSON stays clean; drained via :meth:`pull_events`
+    after the pipeline completes."""
+
+    def record_event(self, event: "DomainEvent") -> None:
+        """Buffer a domain event for the application layer to dispatch."""
+        self.pending_events.append(event)
+
+    def pull_events(self) -> list["DomainEvent"]:
+        """Return all recorded events and clear the buffer (idempotent)."""
+        events = list(self.pending_events)
+        self.pending_events.clear()
+        return events
+
+    def halt_early(self, reason: str, user_message: str) -> None:
+        """Mark this claim as halted before the synthesizer runs.
+
+        Sets the three early-stop fields and records a `ClaimHaltedEarly`
+        domain event in one atomic step. Agents must use this instead of
+        poking the fields directly so the event can never be forgotten
+        and the field set can never drift apart.
+        """
+        from app.domain.events import ClaimHaltedEarly
+
+        self.early_stop = True
+        self.early_stop_reason = reason
+        self.early_stop_user_message = user_message
+        self.record_event(
+            ClaimHaltedEarly(
+                claim_id=self.claim_id,
+                reason=reason,
+                user_message=user_message,
+            )
+        )
 
 
 def _new_cost() -> "CostBreakdown":
@@ -145,7 +180,10 @@ def _new_cost() -> "CostBreakdown":
 
 from app.domain.cost import CostBreakdown
 from app.domain.decision import AgentResult, Decision, LineItemDecision, PolicyFinding
+from app.domain.events import DomainEvent
 from app.domain.evidence import Contradiction
 from app.domain.trace import TraceStep
 
 ClaimState.model_rebuild()
+
+from app.domain.claim.summary import ClaimSummary  # noqa: E402,F401  (re-export)
