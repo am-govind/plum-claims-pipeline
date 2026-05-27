@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claims Pipeline — Sequence Diagram</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --ink: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+    header {
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin: 14px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: inline-block;
+    }
+    .diagram {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 24px;
+      overflow-x: auto;
+    }
+    .mermaid {
+      background: #ffffff !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    footer {
+      margin-top: 24px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: #f3f4f6;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Multi-Agent Claims Pipeline — Request Sequence</h1>
+      <div class="subtitle">
+        End-to-end flow from <code>POST /api/claims</code> through the LangGraph orchestrator to the persisted decision.
+      </div>
+      <div class="legend">
+        <span><span class="dot"></span> alt blocks = conditional paths</span>
+        <span><span class="dot" style="background:#10b981"></span> par block = concurrent per-document extraction</span>
+        <span><span class="dot" style="background:#f59e0b"></span> dashed return = response back to caller</span>
+      </div>
+    </header>
+
+    <div class="diagram">
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+
+    actor U as User (UI)
+    participant API as FastAPI<br/>POST /api/claims
+    participant P as LangGraph<br/>Pipeline
+    participant I as Intake
+    participant DV as Document<br/>Verification
+    participant EX as Extraction
+    participant LLM as Gemini /<br/>Mock Provider
+    participant V as Extraction<br/>Validator
+    participant CD as Contradiction<br/>Detection
+    participant PA as Policy<br/>Adjudication
+    participant RE as Rule Engine<br/>(policy_rules.json)
+    participant FC as Financial<br/>Calculation
+    participant FD as Fraud<br/>Detection
+    participant DS as Decision<br/>Synthesizer
+    participant DB as SQLite<br/>(SQLAlchemy async)
+
+    U->>API: POST /api/claims<br/>(member, category, amount, docs)
+    API->>P: run_pipeline(ClaimState)
+
+    P->>I: intake.run(state)
+    alt member not found OR policy mismatch
+        I-->>P: state.early_stop = true
+        P-->>API: state (no decision)
+        API->>DB: save(state)
+        API-->>U: 200 NEEDS_CORRECTION<br/>+ user_message
+    else valid
+        I-->>P: agent_results.intake = OK (1.0)
+    end
+
+    P->>DV: document_verification.run(state)
+    alt missing type / UNREADABLE / patient mismatch
+        DV-->>P: early_stop + typed error
+        P-->>API: state (no decision)
+        API->>DB: save(state)
+        API-->>U: 200 NEEDS_REUPLOAD<br/>+ actionable message
+    else all checks pass
+        DV-->>P: agent_results.document_verification = OK
+    end
+
+    P->>EX: extraction.run(state)
+    par per-document concurrent extraction (asyncio.gather)
+        EX->>LLM: extract_document(doc, hint_category)
+        LLM-->>EX: ExtractedDocument + LLMUsage<br/>(tokens, latency, USD)
+    end
+    EX->>V: validate_extraction(doc)
+    V-->>EX: validation_issues<br/>(bill total / date / regex)
+
+    alt low confidence (&lt;0.7) OR validator issues
+        EX-->>P: state.extracted (with issues)
+        P->>P: re_verification (cap=1)
+        P->>EX: re-run extraction
+        EX-->>P: refreshed state.extracted
+    else clean
+        EX-->>P: state.extracted = clean
+    end
+
+    P->>CD: contradiction_detection.run(state)
+    Note over CD: 5 checks: patient name, dates,<br/>hospital name, amount reconcile,<br/>diagnosis-treatment compatibility
+    CD-->>P: state.contradictions
+
+    P->>PA: policy_adjudication.run(state)
+    PA->>RE: engine.evaluate(state)
+    RE-->>PA: RuleResult[]<br/>(coverage, waiting periods,<br/>exclusions, pre-auth, prescription)
+    PA-->>P: state.findings extended
+
+    P->>FC: financial_calculation.run(state)
+    Note over FC: Deterministic 6-step:<br/>line-item exclusions → per-claim cap →<br/>network discount → co-pay →<br/>sub-limit → YTD remaining
+    FC-->>P: state.line_decisions<br/>+ FINANCIAL_CALCULATION finding
+
+    P->>FD: fraud_detection.run(state)
+    alt simulate_component_failure (TC011)
+        FD-)P: raise SimulatedComponentFailure
+        Note over P: orchestrator catches:<br/>state.degraded = true,<br/>confidence delta -0.25,<br/>failed_components += "fraud_detection"
+    else normal
+        FD-->>P: state.fraud_signals<br/>(same-day / monthly / high-value)
+    end
+
+    alt fraud signals AND no policy rule failed
+        P->>P: policy_reconsider (cap=1)
+        Note over P: flag for manual review<br/>because fraud disagrees with policy
+    end
+
+    P->>DS: decision_synthesizer.run(state)
+    DS->>DS: compute_confidence<br/>Σ wᵢ·Cᵢ − α·contradiction − β·degraded
+    DS->>DS: route by precedence:<br/>HARD_REJECT → FRAUD_INVESTIGATION →<br/>ESCALATED_MEDICAL_REVIEW → MANUAL_REVIEW →<br/>NEEDS_CLARIFICATION → PARTIAL → APPROVED → REJECTED
+    DS->>DS: build_explanation_tree(state, decision)
+    DS-->>P: state.decision<br/>(status, approved_amount, reasons,<br/>confidence, user_message, breakdown,<br/>cost rollup)
+
+    P-->>API: ClaimState (final, with trace)
+    API->>DB: ClaimsRepository.save(state)
+    DB-->>API: ok
+    API-->>U: 200 ClaimResponse<br/>(claim_id, full state)
+      </pre>
+    </div>
+
+    <footer>
+      Diagram reflects <code>backend/app/graph/pipeline.py</code> + the agents in <code>backend/app/agents/</code> as currently wired.
+      Critical agents (intake, document_verification, decision_synthesizer) re-raise; non-critical agents are caught by the orchestrator wrapper, which records the failure on the trace and continues in degraded mode.
+    </footer>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      themeVariables: {
+        background: "#ffffff",
+        primaryColor: "#ffffff",
+        primaryTextColor: "#111827",
+        primaryBorderColor: "#9ca3af",
+        lineColor: "#374151",
+        secondaryColor: "#f3f4f6",
+        tertiaryColor: "#ffffff",
+        actorBkg: "#ffffff",
+        actorBorder: "#1f2937",
+        actorTextColor: "#111827",
+        actorLineColor: "#9ca3af",
+        signalColor: "#1f2937",
+        signalTextColor: "#111827",
+        labelBoxBkgColor: "#eef2ff",
+        labelBoxBorderColor: "#6366f1",
+        labelTextColor: "#111827",
+        loopTextColor: "#111827",
+        noteBkgColor: "#fef3c7",
+        noteTextColor: "#111827",
+        noteBorderColor: "#f59e0b",
+        activationBkgColor: "#dbeafe",
+        activationBorderColor: "#2563eb",
+        sequenceNumberColor: "#ffffff"
+      },
+      sequence: {
+        diagramMarginX: 32,
+        diagramMarginY: 16,
+        actorMargin: 56,
+        boxMargin: 12,
+        boxTextMargin: 8,
+        noteMargin: 10,
+        messageMargin: 36,
+        mirrorActors: true,
+        useMaxWidth: true,
+        wrap: true
+      },
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+    });
+  </script>
+</body>
+</html>
