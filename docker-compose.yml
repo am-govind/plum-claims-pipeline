@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      DATABASE_URL: sqlite+aiosqlite:////data/claims.db
+      POLICY_TERMS_PATH: /policy/policy_terms.json
+      TEST_CASES_PATH: /policy/test_cases.json
+      CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - ./policy_terms.json:/policy/policy_terms.json:ro
+      - ./test_cases.json:/policy/test_cases.json:ro
+      - claims-data:/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  claims-data:
