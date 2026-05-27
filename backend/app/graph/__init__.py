@@ -1,0 +1,5 @@
+"""LangGraph orchestration."""
+
+from app.graph.pipeline import run_pipeline
+
+__all__ = ["run_pipeline"]
