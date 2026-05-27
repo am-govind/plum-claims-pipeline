@@ -1,4 +1,13 @@
-"""FastAPI app entrypoint."""
+"""FastAPI app entrypoint.
+
+Wires the `Container` (built in the composition root) into FastAPI:
+
+- on startup, build the container and open its database
+- on shutdown, close the database
+- every router pulls its collaborators from the container via
+  `Depends()` providers in `deps.py`, so no router reaches across
+  layers for module-level state.
+"""
 
 from __future__ import annotations
 
@@ -7,24 +16,26 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import get_settings
-from app.domain.policy.terms import load_policy
-from app.infrastructure.persistence.db import close_engine, init_db
+from app.composition import compose
+from app.config import Settings
 from app.interfaces.http.routers.claims import router as claims_router
 from app.interfaces.http.routers.eval import router as eval_router
 from app.interfaces.http.routers.members import router as members_router
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    load_policy()
-    await init_db()
-    yield
-    await close_engine()
+async def lifespan(app: FastAPI):
+    container = compose(Settings())
+    app.state.container = container
+    await container.database.init()
+    try:
+        yield
+    finally:
+        await container.database.close()
 
 
 def create_app() -> FastAPI:
-    settings = get_settings()
+    settings = Settings()
     app = FastAPI(
         title="Plum Claims Pipeline",
         version="0.1.0",
@@ -44,7 +55,8 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "llm_provider": settings.llm_provider}
+        provider = app.state.container.settings.llm_provider
+        return {"status": "ok", "llm_provider": provider}
 
     @app.get("/")
     async def root() -> dict[str, str]:

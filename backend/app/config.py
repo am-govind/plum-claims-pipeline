@@ -15,6 +15,10 @@ class Settings(BaseSettings):
 
     Defaults are tuned for local development against the SQLite DB and the
     deterministic mock LLM provider, so the eval suite runs offline.
+
+    Instantiate directly (``Settings()``) at the composition root and
+    thread the instance through the container — there is no global
+    accessor on purpose.
     """
 
     model_config = SettingsConfigDict(
@@ -39,13 +43,3 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
-
-
-_settings: Settings | None = None
-
-
-def get_settings() -> Settings:
-    global _settings
-    if _settings is None:
-        _settings = Settings()
-    return _settings

@@ -5,16 +5,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from app.domain.policy.terms import get_policy
+from app.application.ports.policy_repository import PolicyRepository
+from app.interfaces.http.deps import get_policy_repository
 
 router = APIRouter(prefix="/api", tags=["policy"])
 
 
 @router.get("/members")
-async def list_members() -> list[dict[str, Any]]:
-    policy = get_policy()
+async def list_members(
+    policies: PolicyRepository = Depends(get_policy_repository),
+) -> list[dict[str, Any]]:
+    policy = policies.get_terms()
     return [
         {
             "member_id": m["member_id"],
@@ -28,8 +31,10 @@ async def list_members() -> list[dict[str, Any]]:
 
 
 @router.get("/policy")
-async def policy_summary() -> dict[str, Any]:
-    p = get_policy()
+async def policy_summary(
+    policies: PolicyRepository = Depends(get_policy_repository),
+) -> dict[str, Any]:
+    p = policies.get_terms()
     return {
         "policy_id": p.policy_id,
         "policy_name": p.raw.get("policy_name"),
