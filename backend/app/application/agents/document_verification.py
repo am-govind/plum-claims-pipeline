@@ -21,7 +21,7 @@ from app.domain.errors import (
     UnreadableDocumentError,
     error_to_user_message,
 )
-from app.domain.policy.terms import get_policy
+from app.domain.policy.terms import PolicyTerms
 from app.domain.trace import TraceStatus
 
 NAME_SIMILARITY_THRESHOLD = 80
@@ -31,10 +31,13 @@ class DocumentVerificationAgent(BaseAgent):
     name = "document_verification"
     is_critical = True
 
+    def __init__(self, *, policy: PolicyTerms) -> None:
+        self._policy = policy
+
     async def run(self, state: ClaimState) -> ClaimState:
         rec = self.recorder(state)
         with rec.time_step(self.name) as ctx:
-            policy = get_policy()
+            policy = self._policy
             inp = state.input
             requirements = policy.document_requirements.get(inp.claim_category.value, {})
             required = list(requirements.get("required", []))
@@ -105,9 +108,7 @@ class DocumentVerificationAgent(BaseAgent):
             latency_ms=latency_ms,
             error=err.code,
         )
-        state.early_stop = True
-        state.early_stop_reason = err.code
-        state.early_stop_user_message = error_to_user_message(err)
+        state.halt_early(reason=err.code, user_message=error_to_user_message(err))
 
     @staticmethod
     def _patient_mismatch(documents: list[DocumentInput]) -> dict[str, str] | None:

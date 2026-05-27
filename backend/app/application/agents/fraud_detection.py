@@ -18,7 +18,8 @@ from datetime import datetime, timedelta
 from app.application.agents.base import BaseAgent
 from app.domain.claim import ClaimState
 from app.domain.decision import AgentResult, PolicyFinding
-from app.domain.policy.terms import get_policy
+from app.domain.events import FraudSignalsRaised
+from app.domain.policy.terms import PolicyTerms
 from app.domain.trace import TraceStatus
 
 
@@ -31,6 +32,9 @@ class FraudDetectionAgent(BaseAgent):
     name = "fraud_detection"
     is_critical = False
 
+    def __init__(self, *, policy: PolicyTerms) -> None:
+        self._policy = policy
+
     async def run(self, state: ClaimState) -> ClaimState:
         rec = self.recorder(state)
         with rec.time_step(self.name) as ctx:
@@ -39,8 +43,7 @@ class FraudDetectionAgent(BaseAgent):
                     "Simulated component failure for graceful-degradation test"
                 )
 
-            policy = get_policy()
-            thresholds = policy.fraud_thresholds
+            thresholds = self._policy.fraud_thresholds
             inp = state.input
 
             signals: list[str] = []
@@ -77,6 +80,12 @@ class FraudDetectionAgent(BaseAgent):
             state.fraud_signals = signals
 
             if signals:
+                state.record_event(
+                    FraudSignalsRaised(
+                        claim_id=state.claim_id,
+                        signals=tuple(signals),
+                    )
+                )
                 state.findings.append(
                     PolicyFinding(
                         code="FRAUD_SIGNALS",

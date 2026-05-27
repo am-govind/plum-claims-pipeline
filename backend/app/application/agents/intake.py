@@ -14,7 +14,7 @@ from app.domain.decision import (
     PolicyFinding,
     RejectionReason,
 )
-from app.domain.policy.terms import get_policy
+from app.domain.policy.terms import PolicyTerms
 from app.domain.trace import TraceStatus
 
 
@@ -22,10 +22,13 @@ class IntakeAgent(BaseAgent):
     name = "intake"
     is_critical = True
 
+    def __init__(self, *, policy: PolicyTerms) -> None:
+        self._policy = policy
+
     async def run(self, state: ClaimState) -> ClaimState:
         rec = self.recorder(state)
         with rec.time_step(self.name) as ctx:
-            policy = get_policy()
+            policy = self._policy
             inp = state.input
 
             member = policy.get_member(inp.member_id)
@@ -48,11 +51,12 @@ class IntakeAgent(BaseAgent):
                     confidence_delta=-0.5,
                     latency_ms=ctx["latency_ms"],
                 )
-                state.early_stop = True
-                state.early_stop_reason = "MEMBER_NOT_FOUND"
-                state.early_stop_user_message = (
-                    f"We could not find member {inp.member_id} in the policy roster. "
-                    f"Please check the member ID and resubmit."
+                state.halt_early(
+                    reason="MEMBER_NOT_FOUND",
+                    user_message=(
+                        f"We could not find member {inp.member_id} in the policy roster. "
+                        f"Please check the member ID and resubmit."
+                    ),
                 )
                 return state
 
@@ -64,11 +68,12 @@ class IntakeAgent(BaseAgent):
                     evidence=evidence,
                     latency_ms=ctx["latency_ms"],
                 )
-                state.early_stop = True
-                state.early_stop_reason = "POLICY_MISMATCH"
-                state.early_stop_user_message = (
-                    f"Policy ID {inp.policy_id} is not the active policy. "
-                    f"Please verify your policy ID."
+                state.halt_early(
+                    reason="POLICY_MISMATCH",
+                    user_message=(
+                        f"Policy ID {inp.policy_id} is not the active policy. "
+                        f"Please verify your policy ID."
+                    ),
                 )
                 return state
 

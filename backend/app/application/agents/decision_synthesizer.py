@@ -23,7 +23,14 @@ from app.domain.decision import (
     PolicyFinding,
     RejectionReason,
 )
-from app.domain.services.confidence import compute_confidence
+from app.domain.events import (
+    ClaimApproved,
+    ClaimPartiallyApproved,
+    ClaimRejected,
+    DomainEvent,
+    ManualReviewRequired,
+)
+from app.domain.services.confidence import ConfidenceConfig, compute_confidence
 from app.domain.services.explanation_builder import build_explanation_tree
 from app.domain.trace import TraceStatus
 
@@ -41,6 +48,9 @@ HARD_REJECT_CODES: set[str] = {
 class DecisionSynthesizerAgent(BaseAgent):
     name = "decision_synthesizer"
     is_critical = True
+
+    def __init__(self, *, confidence_config: ConfidenceConfig) -> None:
+        self._confidence_config = confidence_config
 
     async def run(self, state: ClaimState) -> ClaimState:
         rec = self.recorder(state)
@@ -62,7 +72,7 @@ class DecisionSynthesizerAgent(BaseAgent):
                 f.code == "COVERAGE_CHECK" and not f.passed for f in state.findings
             )
 
-            conf_calc = compute_confidence(state)
+            conf_calc = compute_confidence(state, self._confidence_config)
             confidence = conf_calc.final
             confidence_breakdown = conf_calc.to_breakdown()
             state.confidence = round(confidence, 4)
@@ -259,6 +269,10 @@ class DecisionSynthesizerAgent(BaseAgent):
             state.decision.explanation_tree = build_explanation_tree(state, state.decision)
             state.decision.cost = state.cost
 
+            event = _event_for_decision(state)
+            if event is not None:
+                state.record_event(event)
+
             rec.record(
                 self.name,
                 status=TraceStatus.OK,
@@ -406,3 +420,57 @@ def _needs_clarification(state: ClaimState, final_amount: float) -> bool:
         for d in state.extracted
     )
     return severe and final_amount <= 0
+
+
+_MANUAL_REVIEW_STATUSES: set[DecisionStatus] = {
+    DecisionStatus.MANUAL_REVIEW,
+    DecisionStatus.FRAUD_INVESTIGATION,
+    DecisionStatus.ESCALATED_MEDICAL_REVIEW,
+    DecisionStatus.NEEDS_CLARIFICATION,
+}
+
+
+def _event_for_decision(state: ClaimState) -> DomainEvent | None:
+    """Map a finalised `Decision` onto the appropriate domain event.
+
+    Returns ``None`` only if the synthesizer somehow ran without setting
+    a decision; in practice that branch is unreachable here.
+    """
+    decision = state.decision
+    if decision is None:
+        return None
+    claim_id = state.claim_id
+    status = decision.status
+
+    if status == DecisionStatus.APPROVED:
+        return ClaimApproved(
+            claim_id=claim_id,
+            member_id=state.input.member_id,
+            approved_amount=decision.approved_amount,
+            confidence=decision.confidence,
+        )
+    if status == DecisionStatus.PARTIAL:
+        rejected = tuple(
+            ld.description
+            for ld in state.line_decisions
+            if ld.approved_amount == 0
+        )
+        return ClaimPartiallyApproved(
+            claim_id=claim_id,
+            member_id=state.input.member_id,
+            approved_amount=decision.approved_amount,
+            rejected_line_items=rejected,
+        )
+    if status == DecisionStatus.REJECTED:
+        return ClaimRejected(
+            claim_id=claim_id,
+            rejection_reasons=tuple(r.value for r in decision.rejection_reasons),
+            summary=decision.summary or "",
+        )
+    if status in _MANUAL_REVIEW_STATUSES:
+        return ManualReviewRequired(
+            claim_id=claim_id,
+            reason=status.value,
+            notes=tuple(decision.notes or ()),
+        )
+    return None

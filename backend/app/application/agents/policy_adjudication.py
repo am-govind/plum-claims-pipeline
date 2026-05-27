@@ -14,9 +14,10 @@ do not need to change.
 from __future__ import annotations
 
 from app.application.agents.base import BaseAgent
+from app.application.ports.rule_engine import RuleEngine
 from app.domain.claim import ClaimState
 from app.domain.decision import AgentResult, PolicyFinding
-from app.domain.policy.rules import RuleResult, get_rule_engine
+from app.domain.policy.rules import RuleResult
 from app.domain.trace import TraceStatus
 
 
@@ -24,11 +25,13 @@ class PolicyAdjudicationAgent(BaseAgent):
     name = "policy_adjudication"
     is_critical = False
 
+    def __init__(self, *, rule_engine: RuleEngine) -> None:
+        self._engine = rule_engine
+
     async def run(self, state: ClaimState) -> ClaimState:
         rec = self.recorder(state)
         with rec.time_step(self.name) as ctx:
-            engine = get_rule_engine()
-            results: list[RuleResult] = engine.evaluate(state)
+            results: list[RuleResult] = self._engine.evaluate(state)
 
             findings: list[PolicyFinding] = [
                 PolicyFinding(

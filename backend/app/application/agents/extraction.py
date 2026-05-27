@@ -16,20 +16,17 @@ from app.domain.claim import ClaimState, ExtractedDocument
 from app.domain.decision import AgentResult
 from app.domain.services.extraction_validator import validate_extraction
 from app.domain.trace import TraceStatus
-from app.infrastructure.llm.factory import get_llm_provider
 
 
 class ExtractionAgent(BaseAgent):
     name = "extraction"
     is_critical = False
 
-    def __init__(self, provider: LLMProvider | None = None) -> None:
-        self._provider = provider
+    def __init__(self, *, llm_provider: LLMProvider) -> None:
+        self._provider = llm_provider
 
     @property
     def provider(self) -> LLMProvider:
-        if self._provider is None:
-            self._provider = get_llm_provider()
         return self._provider
 
     async def run(self, state: ClaimState) -> ClaimState:

@@ -15,7 +15,7 @@ from app.application.agents.base import BaseAgent
 from app.domain.claim import ClaimState
 from app.domain.decision import AgentResult, PolicyFinding, RejectionReason
 from app.domain.policy.coverage import apply_financial_calculation
-from app.domain.policy.terms import get_policy
+from app.domain.policy.terms import PolicyTerms
 from app.domain.trace import TraceStatus
 
 HARD_REJECT_CODES = {
@@ -31,10 +31,13 @@ class FinancialCalculationAgent(BaseAgent):
     name = "financial_calculation"
     is_critical = False
 
+    def __init__(self, *, policy: PolicyTerms) -> None:
+        self._policy = policy
+
     async def run(self, state: ClaimState) -> ClaimState:
         rec = self.recorder(state)
         with rec.time_step(self.name) as ctx:
-            policy = get_policy()
+            policy = self._policy
             inp = state.input
             result = apply_financial_calculation(
                 policy=policy,
