@@ -1,0 +1,206 @@
+{
+  "version": "1.0.0",
+  "description": "Declarative policy rules. Evaluated by app.policy.rules.RuleEngine. Each rule has condition; if condition fires, action and reason_template apply. inverse_pass=true rules treat 'fired' as the good state.",
+  "confidence_weights": {
+    "intake": 0.05,
+    "document_verification": 0.20,
+    "extraction": 0.30,
+    "policy_adjudication": 0.15,
+    "financial_calculation": 0.10,
+    "fraud_detection": 0.10,
+    "contradiction_detection": 0.10
+  },
+  "contradiction_penalty_alpha": 0.4,
+  "degraded_penalty_beta": 0.25,
+  "rules": [
+    {
+      "rule_id": "COVERAGE_CHECK",
+      "code": "COVERAGE_CHECK",
+      "category_scope": ["*"],
+      "inverse_pass": true,
+      "condition": {"category_covered": true},
+      "action": "PASS",
+      "severity": "INFO",
+      "reason_template": "Category is covered under this policy",
+      "pass_template": "Category is covered under this policy",
+      "fail_template": "Category is NOT covered under this policy"
+    },
+    {
+      "rule_id": "WAITING_PERIOD_DIABETES",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["diabetes", "t2dm", "type 2 diabetes", "diabetic"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.diabetes}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day diabetes waiting period. Member becomes eligible from ${eligibility_date}.",
+      "pass_template": "No diabetes waiting period violated"
+    },
+    {
+      "rule_id": "WAITING_PERIOD_HYPERTENSION",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["hypertension", "htn", "high blood pressure"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.hypertension}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day hypertension waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "WAITING_PERIOD_THYROID",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["thyroid", "hypothyroid", "hyperthyroid"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.thyroid_disorders}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day thyroid disorders waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "WAITING_PERIOD_JOINT_REPLACEMENT",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["joint replacement", "knee replacement", "hip replacement"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.joint_replacement}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day joint-replacement waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "WAITING_PERIOD_MATERNITY",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["maternity", "pregnancy", "delivery", "antenatal"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.maternity}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day maternity waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "WAITING_PERIOD_MENTAL_HEALTH",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["mental health", "depression", "anxiety", "psychiatric"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.mental_health}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day mental-health waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "WAITING_PERIOD_OBESITY",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["obesity", "bariatric", "weight loss"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.obesity_treatment}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day obesity-treatment waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "WAITING_PERIOD_HERNIA",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["hernia"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.hernia}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day hernia waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "WAITING_PERIOD_CATARACT",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"matches_diagnosis": ["cataract"]},
+          {"days_since_join_lt": "${policy.waiting_periods.specific_conditions.cataract}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day cataract waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "WAITING_PERIOD_INITIAL",
+      "code": "WAITING_PERIOD",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"days_since_join_lt": "${policy.waiting_periods.initial_waiting_period_days}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day initial waiting period. Member becomes eligible from ${eligibility_date}."
+    },
+    {
+      "rule_id": "EXCLUDED_CONDITION",
+      "code": "EXCLUDED_CONDITION",
+      "category_scope": ["*"],
+      "condition": {"diagnosis_excluded": true},
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Diagnosis/treatment matches excluded condition: '${matched_exclusion}'."
+    },
+    {
+      "rule_id": "PRE_AUTH_DIAGNOSTIC_HIGH_VALUE",
+      "code": "PRE_AUTH_MISSING",
+      "category_scope": ["DIAGNOSTIC"],
+      "condition": {
+        "all": [
+          {"high_value_test_in_doc": "${policy.opd_categories.diagnostic.high_value_tests_requiring_pre_auth}"},
+          {"claimed_amount_gt": "${policy.opd_categories.diagnostic.pre_auth_threshold}"}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "Pre-authorization required for ${matched_test} above the threshold. Claim amount ₹${claimed_amount} requires prior approval, which was not obtained. Please obtain pre-authorization from the insurer for this test, then resubmit the claim with the pre-auth reference number."
+    },
+    {
+      "rule_id": "PRESCRIPTION_REQUIRED",
+      "code": "PRESCRIPTION_MISSING",
+      "category_scope": ["*"],
+      "condition": {
+        "all": [
+          {"category_requires_prescription": true},
+          {"prescription_present": false}
+        ]
+      },
+      "action": "REJECT",
+      "severity": "REJECT",
+      "reason_template": "${claim_category} claims require a prescription"
+    }
+  ]
+}
