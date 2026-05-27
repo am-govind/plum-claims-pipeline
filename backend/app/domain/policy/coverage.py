@@ -23,7 +23,7 @@ from typing import Any
 
 from app.domain.claim import ClaimCategory, ExtractedDocument, LineItem
 from app.domain.decision import LineItemDecision, RejectionReason
-from app.domain.policy.terms import PolicyTerms, is_network_hospital
+from app.domain.policy.terms import PolicyTerms
 
 
 def category_config(policy: PolicyTerms, category: ClaimCategory) -> dict[str, Any]:
@@ -119,7 +119,7 @@ def apply_financial_calculation(
         and gross_after_line_items > effective_per_claim_cap
     )
 
-    network_is_match = is_network_hospital(hospital_name)
+    network_is_match = policy.is_network_hospital(hospital_name)
     network_discount_pct = cfg.get("network_discount_percent", 0) if network_is_match else 0
     network_discount_amount = round(gross_after_line_items * network_discount_pct / 100.0, 2)
     after_discount = round(gross_after_line_items - network_discount_amount, 2)

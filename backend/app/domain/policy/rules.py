@@ -16,22 +16,17 @@ the plan calls "thin loop" refactor — same outputs, different source.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
-from datetime import date as DateType
 from datetime import timedelta
-from functools import lru_cache
-from pathlib import Path
 from string import Template
 from typing import Any
 
-from app.config import get_settings
 from app.domain.claim import ClaimState, DocumentType, ExtractedDocument
 from app.domain.evidence import EvidenceLink
 from app.domain.policy.exclusions import diagnosis_excluded_reason
-from app.domain.policy.terms import PolicyTerms, get_policy
-from app.domain.policy.waiting_periods import _matched_condition
+from app.domain.policy.terms import PolicyTerms
+from app.domain.policy.waiting_periods import _matched_condition  # noqa: F401  (kept for future helpers)
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -55,7 +50,7 @@ class RuleResult:
 # ---------------------------------------------------------------------------
 
 
-class RuleEngine:
+class DslRuleEngine:
     """Evaluator for a tightly-scoped JSON rule DSL.
 
     Supported operator nodes (each a single-key dict):
@@ -75,23 +70,24 @@ class RuleEngine:
     - ``{"category_requires_prescription": true}`` and ``{"prescription_present": true}``
 
     The ``${path}`` resolver walks ``policy`` then ``state``.
+
+    Construct with the parsed ``rules_data`` dict and the active
+    ``PolicyTerms``; no file IO happens here.
     """
 
-    def __init__(self, rules_path: str | Path | None = None) -> None:
-        settings = get_settings()
-        self.rules_path = Path(rules_path or settings.policy_rules_path)
-        self.rules_data = _load_rules_file(self.rules_path)
+    def __init__(self, *, rules_data: dict[str, Any], policy: PolicyTerms) -> None:
+        self.rules_data = rules_data
+        self.policy = policy
 
     # -- public API ----------------------------------------------------------
 
     def evaluate(self, state: ClaimState) -> list[RuleResult]:
-        policy = get_policy()
         results: list[RuleResult] = []
         for rule in self.rules_data.get("rules", []):
             scope = rule.get("category_scope", ["*"])
             if "*" not in scope and state.input.claim_category.value not in scope:
                 continue
-            ctx = _Ctx(policy=policy, state=state, rule=rule)
+            ctx = _Ctx(policy=self.policy, state=state, rule=rule)
             ctx.template_vars.update(
                 {
                     "treatment_date": str(state.input.treatment_date),
@@ -444,29 +440,4 @@ def _make_result(rule: dict[str, Any], ctx: _Ctx, triggered: bool) -> RuleResult
     )
 
 
-# -- file loading ------------------------------------------------------------
-
-
-@lru_cache(maxsize=4)
-def _load_rules_file(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def get_rule_engine() -> RuleEngine:
-    return RuleEngine()
-
-
-def reload_rules() -> None:
-    """Drop the cached rule file (test helper)."""
-    _load_rules_file.cache_clear()
-
-
-# Re-export ``date`` constant so the rule engine module is fully self-contained
-# for downstream imports without leaking implementation details.
-__all__ = [
-    "RuleEngine",
-    "RuleResult",
-    "get_rule_engine",
-    "reload_rules",
-]
+__all__ = ["DslRuleEngine", "RuleResult"]

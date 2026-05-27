@@ -6,7 +6,7 @@ Documented formula::
 
 Where:
 
-- ``w_i`` is the weight for agent ``i`` (read from ``policy_rules.json``).
+- ``w_i`` is the weight for agent ``i`` (configured via `ConfidenceConfig`).
 - ``C_i`` is the agent's self-reported confidence (``state.agent_results``).
 - ``α``, ``β`` are tunable penalty coefficients.
 - ``contradiction_score`` = mean of agent contradiction_scores, capped at 1.
@@ -16,21 +16,16 @@ We expose the per-component ``w_i * C_i`` terms on
 ``Decision.confidence_breakdown`` so the UI can show "How was this
 calculated?" — every agent's contribution is auditable.
 
-This replaces the old ad-hoc ``TraceRecorder.confidence_delta`` accumulator
-as the *authoritative* number on the decision. The trace deltas are still
-recorded and shown for visibility, but the final ``Decision.confidence``
-comes from this formula.
+This module is pure domain: it takes a `ConfidenceConfig` and a
+`ClaimState`, returns a `ConfidenceComputation`. File IO for the
+config lives in `app.infrastructure.policy.json_rules_loader`.
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any
 
-from app.config import get_settings
 from app.domain.claim import ClaimState
 
 DEFAULT_WEIGHTS: dict[str, float] = {
@@ -44,6 +39,24 @@ DEFAULT_WEIGHTS: dict[str, float] = {
 }
 DEFAULT_ALPHA = 0.4
 DEFAULT_BETA = 0.25
+
+
+@dataclass(frozen=True)
+class ConfidenceConfig:
+    """Tunable inputs to the confidence formula.
+
+    Constructed once by the composition root from the rules JSON and
+    threaded into `DecisionSynthesizerAgent`. Using a frozen dataclass
+    keeps it cheap to copy and impossible to mutate at runtime.
+    """
+
+    weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
+    alpha: float = DEFAULT_ALPHA
+    beta: float = DEFAULT_BETA
+
+    @classmethod
+    def default(cls) -> "ConfidenceConfig":
+        return cls()
 
 
 @dataclass
@@ -77,17 +90,18 @@ class ConfidenceComputation:
         }
 
 
-def compute_confidence(state: ClaimState) -> ConfidenceComputation:
-    """Apply the weighted formula to ``state``.
+def compute_confidence(
+    state: ClaimState, config: ConfidenceConfig
+) -> ConfidenceComputation:
+    """Apply the weighted formula to ``state`` using ``config``.
 
     Components without a corresponding ``state.agent_results`` entry
     contribute their weight times 0 — they're effectively missing-data
     penalties without forcing the synthesizer to fabricate values.
     """
-    cfg = _load_config()
-    weights = cfg.get("confidence_weights", DEFAULT_WEIGHTS)
-    alpha = float(cfg.get("contradiction_penalty_alpha", DEFAULT_ALPHA))
-    beta = float(cfg.get("degraded_penalty_beta", DEFAULT_BETA))
+    weights = config.weights
+    alpha = config.alpha
+    beta = config.beta
 
     per_component: dict[str, dict[str, float]] = {}
     weighted_sum = 0.0
@@ -127,17 +141,3 @@ def compute_confidence(state: ClaimState) -> ConfidenceComputation:
         alpha=alpha,
         beta=beta,
     )
-
-
-@lru_cache(maxsize=1)
-def _load_config() -> dict[str, Any]:
-    settings = get_settings()
-    p = Path(settings.policy_rules_path)
-    if not p.exists():
-        return {}
-    with p.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def reload_config() -> None:
-    _load_config.cache_clear()
