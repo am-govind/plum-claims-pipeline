@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from app.application.pipeline import run_pipeline
-from app.config import get_settings
+from app.composition import Container, compose
+from app.config import Settings
 from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
@@ -26,7 +27,6 @@ from app.domain.claim import (
     DocumentQuality,
     DocumentType,
 )
-from app.infrastructure.llm.mock import MockProvider
 
 
 def _doc_from_case(d: dict[str, Any]) -> DocumentInput:
@@ -209,11 +209,12 @@ def _check_one(req: str, state: ClaimState, msg_l: str, trace_text: str) -> bool
     return False
 
 
-async def run_case(case: dict[str, Any]) -> dict[str, Any]:
+async def run_case(case: dict[str, Any], container: Container) -> dict[str, Any]:
     case_id = case["case_id"]
     inp = _input_from_case(case)
     state = ClaimState(claim_id=case_id, input=inp)
-    state = await run_pipeline(state, llm_provider=MockProvider())
+    state = await run_pipeline(state, container.pipeline)
+    await container.event_bus.publish_all(state.pull_events())
     passed, issues = _passes(state, case["expected"])
     must_results = _check_system_must(state, case["expected"])
     if any(not m["satisfied"] for m in must_results):
@@ -257,15 +258,14 @@ async def run_case(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _load_test_cases() -> list[dict[str, Any]]:
-    settings = get_settings()
-    p = Path(settings.test_cases_path)
+def _load_test_cases(test_cases_path: str) -> list[dict[str, Any]]:
+    p = Path(test_cases_path)
     return json.loads(p.read_text())["test_cases"]
 
 
-async def run_all_cases() -> list[dict[str, Any]]:
-    cases = _load_test_cases()
-    return [await run_case(c) for c in cases]
+async def run_all_cases(container: Container) -> list[dict[str, Any]]:
+    cases = _load_test_cases(container.settings.test_cases_path)
+    return [await run_case(c, container) for c in cases]
 
 
 def main() -> int:
@@ -276,7 +276,8 @@ def main() -> int:
     from eval.report import write_markdown_report
 
     console = Console()
-    results = asyncio.run(run_all_cases())
+    container = compose(Settings())
+    results = asyncio.run(run_all_cases(container))
 
     passed = sum(1 for r in results if r["passed"])
     table = Table(title=f"Plum Claims Eval — {passed}/{len(results)} passed")

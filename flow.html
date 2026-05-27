@@ -93,11 +93,12 @@
     <header>
       <h1>Multi-Agent Claims Pipeline — Request Sequence</h1>
       <div class="subtitle">
-        End-to-end flow from <code>POST /api/claims</code> through the LangGraph orchestrator to the persisted decision.
+        End-to-end flow from <code>POST /api/claims</code> through the LangGraph orchestrator, the SqlAlchemy <code>ClaimRepository</code>, and the in-memory <code>EventBus</code>. Dependencies are constructed once at the composition root (<code>backend/app/composition.py</code>) and injected via FastAPI <code>Depends()</code>.
       </div>
       <div class="legend">
         <span><span class="dot"></span> alt blocks = conditional paths</span>
         <span><span class="dot" style="background:#10b981"></span> par block = concurrent per-document extraction</span>
+        <span><span class="dot" style="background:#a855f7"></span> domain events recorded on state, dispatched after save</span>
         <span><span class="dot" style="background:#f59e0b"></span> dashed return = response back to caller</span>
       </div>
     </header>
@@ -108,29 +109,36 @@ sequenceDiagram
     autonumber
 
     actor U as User (UI)
-    participant API as FastAPI<br/>POST /api/claims
-    participant P as LangGraph<br/>Pipeline
+    participant API as FastAPI<br/>POST /api/claims<br/>(Depends: pipeline, claims, event_bus)
+    participant P as LangGraph<br/>Pipeline<br/>(application/pipeline.py)
+    participant ST as ClaimState<br/>(aggregate)
     participant I as Intake
     participant DV as Document<br/>Verification
     participant EX as Extraction
-    participant LLM as Gemini /<br/>Mock Provider
+    participant LLM as LLMProvider<br/>(Gemini / Mock)
     participant V as Extraction<br/>Validator
     participant CD as Contradiction<br/>Detection
     participant PA as Policy<br/>Adjudication
-    participant RE as Rule Engine<br/>(policy_rules.json)
+    participant RE as DslRuleEngine<br/>(policy_rules.json)
     participant FC as Financial<br/>Calculation
     participant FD as Fraud<br/>Detection
     participant DS as Decision<br/>Synthesizer
-    participant DB as SQLite<br/>(SQLAlchemy async)
+    participant CR as ClaimRepository<br/>(SqlAlchemy adapter)
+    participant EB as EventBus<br/>+ Structlog/Notification<br/>handlers
 
     U->>API: POST /api/claims<br/>(member, category, amount, docs)
-    API->>P: run_pipeline(ClaimState)
+    Note over API: FastAPI resolves Depends():<br/>pipeline, claims (port), event_bus
+    API->>P: run_pipeline(state, compiled_pipeline)
 
     P->>I: intake.run(state)
     alt member not found OR policy mismatch
-        I-->>P: state.early_stop = true
+        I->>ST: state.halt_early(reason, user_message)
+        Note over ST: sets early_stop / reason /<br/>user_message AND records<br/>ClaimHaltedEarly event
+        I-->>P: state (early_stop=true)
         P-->>API: state (no decision)
-        API->>DB: save(state)
+        API->>CR: claims.save(state)
+        API->>EB: event_bus.publish_all(state.pull_events())
+        Note over EB: fan-out to Structlog +<br/>NotificationStub (per-handler<br/>exception isolation)
         API-->>U: 200 NEEDS_CORRECTION<br/>+ user_message
     else valid
         I-->>P: agent_results.intake = OK (1.0)
@@ -138,9 +146,12 @@ sequenceDiagram
 
     P->>DV: document_verification.run(state)
     alt missing type / UNREADABLE / patient mismatch
-        DV-->>P: early_stop + typed error
+        DV->>ST: state.halt_early(err.code, error_to_user_message(err))
+        Note over ST: ClaimHaltedEarly recorded<br/>via the aggregate method
+        DV-->>P: state (early_stop + typed error)
         P-->>API: state (no decision)
-        API->>DB: save(state)
+        API->>CR: claims.save(state)
+        API->>EB: event_bus.publish_all(state.pull_events())
         API-->>U: 200 NEEDS_REUPLOAD<br/>+ actionable message
     else all checks pass
         DV-->>P: agent_results.document_verification = OK
@@ -164,7 +175,7 @@ sequenceDiagram
     end
 
     P->>CD: contradiction_detection.run(state)
-    Note over CD: 5 checks: patient name, dates,<br/>hospital name, amount reconcile,<br/>diagnosis-treatment compatibility
+    Note over CD: 6 checks: patient name, dates,<br/>hospital name, amount reconcile,<br/>claimed vs bills, diagnosis-treatment
     CD-->>P: state.contradictions
 
     P->>PA: policy_adjudication.run(state)
@@ -179,9 +190,13 @@ sequenceDiagram
     P->>FD: fraud_detection.run(state)
     alt simulate_component_failure (TC011)
         FD-)P: raise SimulatedComponentFailure
-        Note over P: orchestrator catches:<br/>state.degraded = true,<br/>confidence delta -0.25,<br/>failed_components += "fraud_detection"
-    else normal
+        Note over P: pipeline._wrap catches:<br/>state.degraded = true,<br/>failed_components += "fraud_detection"
+        P->>ST: state.record_event(ComponentDegraded)
+    else fraud signals raised
         FD-->>P: state.fraud_signals<br/>(same-day / monthly / high-value)
+        FD->>ST: state.record_event(FraudSignalsRaised)
+    else clean
+        FD-->>P: no signals
     end
 
     alt fraud signals AND no policy rule failed
@@ -193,18 +208,22 @@ sequenceDiagram
     DS->>DS: compute_confidence<br/>Σ wᵢ·Cᵢ − α·contradiction − β·degraded
     DS->>DS: route by precedence:<br/>HARD_REJECT → FRAUD_INVESTIGATION →<br/>ESCALATED_MEDICAL_REVIEW → MANUAL_REVIEW →<br/>NEEDS_CLARIFICATION → PARTIAL → APPROVED → REJECTED
     DS->>DS: build_explanation_tree(state, decision)
+    DS->>ST: state.record_event(<br/>ClaimApproved | ClaimPartiallyApproved |<br/>ClaimRejected | ManualReviewRequired)
     DS-->>P: state.decision<br/>(status, approved_amount, reasons,<br/>confidence, user_message, breakdown,<br/>cost rollup)
 
-    P-->>API: ClaimState (final, with trace)
-    API->>DB: ClaimsRepository.save(state)
-    DB-->>API: ok
+    P-->>API: ClaimState (final, with trace + pending_events)
+    API->>CR: claims.save(state)
+    CR-->>API: ok
+    API->>EB: event_bus.publish_all(state.pull_events())
+    Note over EB: sequential async fan-out<br/>StructlogEventHandler → "domain_event" log line<br/>NotificationStubHandler → "would_notify_member"
+    EB-->>API: ok
     API-->>U: 200 ClaimResponse<br/>(claim_id, full state)
       </pre>
     </div>
 
     <footer>
-      Diagram reflects <code>backend/app/graph/pipeline.py</code> + the agents in <code>backend/app/agents/</code> as currently wired.
-      Critical agents (intake, document_verification, decision_synthesizer) re-raise; non-critical agents are caught by the orchestrator wrapper, which records the failure on the trace and continues in degraded mode.
+      Diagram reflects the hex-layer wiring: pipeline in <code>backend/app/application/pipeline.py</code>, agents in <code>backend/app/application/agents/</code>, ports in <code>backend/app/application/ports/</code>, adapters (SqlAlchemy repository, JSON policy loader, Gemini/Mock providers, InMemoryEventBus + handlers) in <code>backend/app/infrastructure/</code>, FastAPI routers + <code>Depends()</code> in <code>backend/app/interfaces/http/</code>, and the composition root at <code>backend/app/composition.py</code>.
+      Critical agents (intake, document_verification, decision_synthesizer) re-raise; non-critical agents are caught by <code>pipeline._wrap</code>, which records the failure on the trace, marks the run degraded, and records a <code>ComponentDegraded</code> event. Domain events (<code>ClaimApproved</code>, <code>ClaimPartiallyApproved</code>, <code>ClaimRejected</code>, <code>ManualReviewRequired</code>, <code>ClaimHaltedEarly</code>, <code>ComponentDegraded</code>, <code>FraudSignalsRaised</code>) are buffered on <code>ClaimState</code> and dispatched exactly once per claim, after persistence.
     </footer>
   </div>
 

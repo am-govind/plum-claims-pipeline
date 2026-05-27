@@ -27,6 +27,34 @@ Decision statuses include `APPROVED`, `PARTIAL`, `REJECTED`,
 `FRAUD_INVESTIGATION` — each routed by the synthesizer based on which
 combination of signals the pipeline produced.
 
+## Hexagonal layering
+
+The backend is organised into four layers with a strict one-way
+dependency rule (inner layers know nothing about outer layers):
+
+```
+interfaces/   (FastAPI routers, request/response models, Depends())
+    │
+    ▼
+application/  (pipeline, agents, ports/* abstract interfaces)
+    │
+    ▼
+domain/       (ClaimState, PolicyTerms, Decision, events, rule DSL — pure Python)
+    ▲
+    │ implements ports
+    │
+infrastructure/ (SQLAlchemy repo, JSON policy loader, Gemini provider,
+                 InMemoryEventBus, structlog/notification handlers)
+```
+
+All dependencies are wired in one place — `backend/app/composition.py`
+(`compose(settings) -> Container`). The FastAPI lifespan creates the
+container once and exposes it via `Depends()` providers in
+`backend/app/interfaces/http/deps.py`. There are no module-level
+singletons, no `get_settings()` global, no `lru_cache`d providers —
+every collaborator is constructor-injected, which is why the test
+suite can build its own `Container` per fixture without monkey-patching.
+
 ## Pipeline (with deliberation cycles)
 
 ```mermaid
@@ -46,7 +74,8 @@ flowchart TD
     Fraud -->|ok| Decide[Decision Synthesizer<br/>+ confidence formula<br/>+ explanation tree<br/>+ cost rollup]
     Reconsider --> Decide
     Decide --> Persist
-    Persist --> UI[Trace Timeline UI]
+    Persist --> Publish[EventBus.publish_all<br/>state.pull_events]
+    Publish --> UI[Trace Timeline UI]
 ```
 
 Concretely the orchestrator is a [LangGraph](https://langchain-ai.github.io/langgraph/)
@@ -63,9 +92,12 @@ This shape is why the trace UI can reconstruct any claim's reasoning without
 any logging gymnastics — the trace is the source of truth.
 
 See:
-- Wiring: [backend/app/graph/pipeline.py](../backend/app/graph/pipeline.py)
-- Models: [backend/app/models/](../backend/app/models)
-- Agents: [backend/app/agents/](../backend/app/agents)
+- Composition root: [backend/app/composition.py](../backend/app/composition.py)
+- Pipeline wiring: [backend/app/application/pipeline.py](../backend/app/application/pipeline.py)
+- Agents: [backend/app/application/agents/](../backend/app/application/agents)
+- Ports: [backend/app/application/ports/](../backend/app/application/ports)
+- Domain types: [backend/app/domain/](../backend/app/domain)
+- Adapters: [backend/app/infrastructure/](../backend/app/infrastructure)
 
 ## Components and responsibilities
 
@@ -91,18 +123,18 @@ of crashing.
 
 ## Two LLM providers behind one interface
 
-`LLMProvider` ([backend/app/llm/base.py](../backend/app/llm/base.py)) defines
+`LLMProvider` ([backend/app/application/ports/llm.py](../backend/app/application/ports/llm.py)) defines
 `extract_document(doc, hint_category) -> (ExtractedDocument, LLMUsage)`.
 The usage record carries `tokens_in`, `tokens_out`, `latency_ms`, `model`,
 and `usd_estimate` — accumulated onto `state.cost.llm_calls` so the
 decision card and the eval report can show "this decision used X tokens
 for ≈ $Y in Z ms".
 
-- `GeminiProvider` ([backend/app/llm/gemini.py](../backend/app/llm/gemini.py))
+- `GeminiProvider` ([backend/app/infrastructure/llm/gemini.py](../backend/app/infrastructure/llm/gemini.py))
   uses Gemini with a strict JSON schema prompt and a 30-second timeout.
   Vision input is supported when the document carries `bytes_b64` + `mime_type`.
   Pulls real token counts off `response.usage_metadata`.
-- `MockProvider` ([backend/app/llm/mock.py](../backend/app/llm/mock.py)) reads
+- `MockProvider` ([backend/app/infrastructure/llm/mock.py](../backend/app/infrastructure/llm/mock.py)) reads
   the pre-extracted `content` block in `test_cases.json`, returns it as an
   `ExtractedDocument`, and emits realistic-but-synthesised usage numbers
   (length-derived) so the eval report carries plausible cost data offline.
@@ -115,11 +147,11 @@ back to `MockProvider` automatically.
 ## Declarative rule engine
 
 Policy rules live in `policy_rules.json` at the repo root and are
-evaluated by `app.policy.rules.RuleEngine`. We deliberately picked a tiny
-custom DSL instead of a general expression language:
+evaluated by `app.domain.policy.rules.DslRuleEngine`. We deliberately
+picked a tiny custom DSL instead of a general expression language:
 
 - Every operator is a single function in
-  [`backend/app/policy/rules.py`](../backend/app/policy/rules.py): `all`,
+  [`backend/app/domain/policy/rules.py`](../backend/app/domain/policy/rules.py): `all`,
   `any`, `not`, `equals`, `in`, comparison ops, plus domain operators
   (`matches_diagnosis`, `diagnosis_excluded`, `days_since_join_lt`,
   `category_in`, `claimed_amount_gt`, `high_value_test_in_doc`,
@@ -142,7 +174,7 @@ synthesizer downstream is unchanged. A reviewer can edit
 ## Confidence as a documented formula
 
 Replacing the old ad-hoc `confidence_delta` accumulator,
-[`backend/app/decision/confidence.py`](../backend/app/decision/confidence.py)
+[`backend/app/domain/services/confidence.py`](../backend/app/domain/services/confidence.py)
 applies:
 
 ```
@@ -164,7 +196,7 @@ number on `Decision.confidence` is now the formula.
 ## Decision Explanation Tree
 
 The synthesizer also builds a recursive
-[`DecisionNode`](../backend/app/models/explanation.py) tree showing the
+[`DecisionNode`](../backend/app/domain/decision/explanation.py) tree showing the
 causal structure of the decision:
 
 ```
@@ -189,7 +221,7 @@ that justified the rule.
 
 The single most error-prone part of any claims pipeline is the order of
 operations. We pin it in one place
-([backend/app/policy/coverage.py](../backend/app/policy/coverage.py))
+([backend/app/domain/policy/coverage.py](../backend/app/domain/policy/coverage.py))
 and unit-test it explicitly:
 
 1. **Line-item exclusion filter** — drop excluded items (TC006: teeth whitening).
@@ -217,11 +249,73 @@ The frontend ([frontend/components/TraceTimeline.tsx](../frontend/components/Tra
 renders this directly. Reviewers click any step to see the JSON evidence —
 this is the audit answer to "why did this claim get this decision?"
 
+## Domain events
+
+Decisions and lifecycle transitions are also published as immutable
+domain events so other parts of the system (notifications, audit
+streams, downstream analytics, future async workers) can react without
+the pipeline needing to know about them. This is the standard DDD
+"published events on the aggregate" pattern.
+
+The seven event types live in
+[`backend/app/domain/events/claim_events.py`](../backend/app/domain/events/claim_events.py):
+
+| Event | Raised by |
+| --- | --- |
+| `ClaimApproved` | `DecisionSynthesizerAgent` (APPROVED) |
+| `ClaimPartiallyApproved` | `DecisionSynthesizerAgent` (PARTIAL) |
+| `ClaimRejected` | `DecisionSynthesizerAgent` (REJECTED) |
+| `ManualReviewRequired` | `DecisionSynthesizerAgent` (MANUAL_REVIEW / NEEDS_* / ESCALATED_MEDICAL_REVIEW) |
+| `ClaimHaltedEarly` | `IntakeAgent`, `DocumentVerificationAgent` (early-stop paths) |
+| `ComponentDegraded` | `pipeline._wrap` (non-critical agent failure) |
+| `FraudSignalsRaised` | `FraudDetectionAgent` |
+
+Events are recorded on `ClaimState` (the aggregate) and dispatched
+after the pipeline returns and the state has been persisted:
+
+```python
+state = await pipeline(state)
+await claims.save(state)
+await event_bus.publish_all(state.pull_events())
+```
+
+The aggregate exposes two methods plus one convenience helper that
+keeps invariants intact:
+
+- `state.record_event(event)` — buffer an event for dispatch.
+- `state.pull_events()` — return all buffered events and clear the buffer.
+- `state.halt_early(reason, user_message)` — mark the claim as halted
+  before the synthesizer runs. Sets `early_stop`, `early_stop_reason`,
+  and `early_stop_user_message`, and records a `ClaimHaltedEarly`
+  event in one atomic step. Agents call this instead of poking the
+  fields directly so the three pieces can never drift apart and the
+  event can never be forgotten.
+
+The `EventBus` port lives at
+[`backend/app/application/ports/event_bus.py`](../backend/app/application/ports/event_bus.py)
+and is implemented by `InMemoryEventBus`
+([`backend/app/infrastructure/events/in_memory_bus.py`](../backend/app/infrastructure/events/in_memory_bus.py))
+with sequential async fan-out and per-handler exception isolation —
+one failing handler never breaks another or the request. The
+composition root wires two handlers by default:
+
+- `StructlogEventHandler` — logs every event as a structured
+  `domain_event` log line, which is what the audit pipeline consumes.
+- `NotificationStubHandler` — placeholder for member-facing
+  notifications on `ClaimApproved`, `ClaimRejected`,
+  `ClaimPartiallyApproved`, `ManualReviewRequired`, and
+  `ClaimHaltedEarly`. Logs a `would_notify` line today; swap the body
+  for an SMS/email gateway at production.
+
+Tests assert both the recording shape (`tests/unit/test_domain_events.py`,
+`tests/unit/test_decision_synthesizer_events.py`) and the dispatch
+shape end-to-end (`tests/integration/test_event_dispatch.py`).
+
 ## Specific, actionable error messages
 
 The hardest part of TC001–TC003 isn't detection — it's the message. We hold
 ourselves to "no generic errors" by routing every typed error through
-`error_to_user_message` ([backend/app/models/errors.py](../backend/app/models/errors.py)),
+`error_to_user_message` ([backend/app/domain/errors.py](../backend/app/domain/errors.py)),
 which interpolates the data the assignment requires:
 
 - `DocumentTypeMismatchError` → names the uploaded type, the required type,

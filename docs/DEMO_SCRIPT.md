@@ -23,7 +23,7 @@ Open in browser tabs in this order:
 1. `http://localhost:3000/` (landing)
 2. `http://localhost:3000/submit` (claim form)
 3. `http://localhost:3000/eval` (eval matrix)
-4. The repo in your editor on `backend/app/graph/pipeline.py`
+4. The repo in your editor on `backend/app/application/pipeline.py`
 
 ## Script
 

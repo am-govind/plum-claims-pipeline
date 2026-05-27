@@ -1,9 +1,16 @@
-"""Unit tests for the formal confidence formula."""
+"""Unit tests for the formal confidence formula.
+
+Loads `ConfidenceConfig` from the live rules JSON so the assertions
+match production behaviour exactly.
+"""
 
 from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
+from app.config import Settings
 from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
@@ -12,7 +19,13 @@ from app.domain.claim import (
     DocumentType,
 )
 from app.domain.decision import AgentResult
-from app.domain.services.confidence import compute_confidence
+from app.domain.services.confidence import ConfidenceConfig, compute_confidence
+from app.infrastructure.policy.json_rules_loader import load_confidence_config
+
+
+@pytest.fixture(scope="module")
+def confidence_config() -> ConfidenceConfig:
+    return load_confidence_config(Settings().policy_rules_path)
 
 
 def _state(*, degraded: bool = False, with_all_agents: bool = True) -> ClaimState:
@@ -46,40 +59,44 @@ def _state(*, degraded: bool = False, with_all_agents: bool = True) -> ClaimStat
     return state
 
 
-def test_perfect_pipeline_yields_confidence_one():
+def test_perfect_pipeline_yields_confidence_one(
+    confidence_config: ConfidenceConfig,
+) -> None:
     state = _state()
-    out = compute_confidence(state)
+    out = compute_confidence(state, confidence_config)
     assert abs(out.final - 1.0) < 1e-6
     assert out.weighted_sum > 0.99
 
 
-def test_degraded_pipeline_lowers_confidence_by_beta():
+def test_degraded_pipeline_lowers_confidence_by_beta(
+    confidence_config: ConfidenceConfig,
+) -> None:
     s_clean = _state(degraded=False)
     s_deg = _state(degraded=True)
-    out_clean = compute_confidence(s_clean)
-    out_deg = compute_confidence(s_deg)
+    out_clean = compute_confidence(s_clean, confidence_config)
+    out_deg = compute_confidence(s_deg, confidence_config)
     assert out_clean.final - out_deg.final == out_deg.beta
 
 
-def test_contradiction_score_penalty():
+def test_contradiction_score_penalty(confidence_config: ConfidenceConfig) -> None:
     state = _state()
     state.agent_results["contradiction_detection"] = AgentResult(
         confidence=0.5, contradiction_score=0.8
     )
-    out = compute_confidence(state)
+    out = compute_confidence(state, confidence_config)
     assert out.contradiction_penalty > 0
     assert out.final < 1.0
 
 
-def test_missing_agents_are_not_fatal():
+def test_missing_agents_are_not_fatal(confidence_config: ConfidenceConfig) -> None:
     state = _state(with_all_agents=False)
     state.agent_results["extraction"] = AgentResult(confidence=1.0)
-    out = compute_confidence(state)
+    out = compute_confidence(state, confidence_config)
     assert 0.0 <= out.final <= 1.0
 
 
-def test_breakdown_is_serializable():
+def test_breakdown_is_serializable(confidence_config: ConfidenceConfig) -> None:
     state = _state()
-    out = compute_confidence(state)
+    out = compute_confidence(state, confidence_config)
     b = out.to_breakdown()
     assert "final" in b and "per_component" in b and "weights" in b

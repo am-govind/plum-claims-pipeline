@@ -7,6 +7,7 @@ from datetime import date
 import pytest
 
 from app.application.agents.document_verification import DocumentVerificationAgent
+from app.config import Settings
 from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
@@ -15,6 +16,13 @@ from app.domain.claim import (
     DocumentQuality,
     DocumentType,
 )
+from app.infrastructure.policy.json_policy_repository import JsonPolicyRepository
+
+
+@pytest.fixture(scope="module")
+def agent() -> DocumentVerificationAgent:
+    policy = JsonPolicyRepository(Settings().policy_terms_path).get_terms()
+    return DocumentVerificationAgent(policy=policy)
 
 
 def _state(documents: list[DocumentInput]) -> ClaimState:
@@ -32,8 +40,7 @@ def _state(documents: list[DocumentInput]) -> ClaimState:
 
 
 @pytest.mark.asyncio
-async def test_tc001_wrong_document_type():
-    agent = DocumentVerificationAgent()
+async def test_tc001_wrong_document_type(agent: DocumentVerificationAgent):
     state = _state(
         [
             DocumentInput(file_id="F001", actual_type=DocumentType.PRESCRIPTION),
@@ -50,8 +57,7 @@ async def test_tc001_wrong_document_type():
 
 
 @pytest.mark.asyncio
-async def test_tc002_unreadable_document():
-    agent = DocumentVerificationAgent()
+async def test_tc002_unreadable_document(agent: DocumentVerificationAgent):
     state = ClaimState(
         claim_id="T",
         input=ClaimInput(
@@ -78,8 +84,7 @@ async def test_tc002_unreadable_document():
 
 
 @pytest.mark.asyncio
-async def test_tc003_patient_mismatch():
-    agent = DocumentVerificationAgent()
+async def test_tc003_patient_mismatch(agent: DocumentVerificationAgent):
     state = _state(
         [
             DocumentInput(
@@ -102,8 +107,7 @@ async def test_tc003_patient_mismatch():
 
 
 @pytest.mark.asyncio
-async def test_clean_documents_pass():
-    agent = DocumentVerificationAgent()
+async def test_clean_documents_pass(agent: DocumentVerificationAgent):
     state = _state(
         [
             DocumentInput(

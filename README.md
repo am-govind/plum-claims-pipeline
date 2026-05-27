@@ -15,12 +15,14 @@ Highlights:
 - **All 12 test cases pass deterministically** ([`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md)).
 - **JSON-driven rule engine** — every policy rule lives in
   [`policy_rules.json`](policy_rules.json) and is evaluated by a tiny
-  custom DSL ([`backend/app/policy/rules.py`](backend/app/policy/rules.py)).
-- **Cross-document contradiction detection** ([`backend/app/agents/contradiction_detection.py`](backend/app/agents/contradiction_detection.py)).
+  custom DSL ([`backend/app/domain/policy/rules.py`](backend/app/domain/policy/rules.py)).
+- **Cross-document contradiction detection** ([`backend/app/application/agents/contradiction_detection.py`](backend/app/application/agents/contradiction_detection.py)).
 - **Post-extraction validator** flags hallucinations, bad dates, and
-  amount-reconciliation failures ([`backend/app/agents/extraction_validator.py`](backend/app/agents/extraction_validator.py)).
+  amount-reconciliation failures ([`backend/app/domain/services/extraction_validator.py`](backend/app/domain/services/extraction_validator.py)).
 - **Formal confidence math** — `Σ wᵢ·Cᵢ − α·contradiction − β·degraded`
-  ([`backend/app/decision/confidence.py`](backend/app/decision/confidence.py)).
+  ([`backend/app/domain/services/confidence.py`](backend/app/domain/services/confidence.py)).
+- **Hex-layer DDD architecture** — `domain` / `application` / `infrastructure` / `interfaces`, constructor-injected dependencies wired in one composition root ([`backend/app/composition.py`](backend/app/composition.py)).
+- **Domain events** — `ClaimApproved`, `ClaimRejected`, `ManualReviewRequired`, `ClaimHaltedEarly`, `ComponentDegraded`, `FraudSignalsRaised` etc., published via an in-memory `EventBus` after every claim run ([`backend/app/domain/events/`](backend/app/domain/events), [`backend/app/infrastructure/events/`](backend/app/infrastructure/events)).
 - **Decision Explanation Tree** rendered as a clickable tree with
   per-node evidence ([`frontend/components/DecisionTree.tsx`](frontend/components/DecisionTree.tsx)).
 - **Token / cost / latency tracking** per LLM call, surfaced on the

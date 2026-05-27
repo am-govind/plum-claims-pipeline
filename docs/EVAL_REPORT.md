@@ -1,6 +1,6 @@
 # Eval Report
 
-_Generated: 2026-05-27T16:59:46.444890+00:00_
+_Generated: 2026-05-27T18:25:29.218140+00:00_
 
 **Summary**: 12/12 cases passed.
 
@@ -9,20 +9,20 @@ _Generated: 2026-05-27T16:59:46.444890+00:00_
 | TC001 | Wrong Document Uploaded | EARLY_STOP | EARLY_STOP | — | 0.5 | 0 ms | 0 | PASS |
 | TC002 | Unreadable Document | EARLY_STOP | EARLY_STOP | — | 0.5 | 0 ms | 0 | PASS |
 | TC003 | Documents Belong to Different Patients | EARLY_STOP | EARLY_STOP | — | 0.5 | 0 ms | 0 | PASS |
-| TC004 | Clean Consultation — Full Approval | APPROVED | APPROVED | 1350.0 | 0.985 | 33 ms | 1413 | PASS |
-| TC005 | Waiting Period — Diabetes | REJECTED | REJECTED | 0.0 | 0.977 | 0 ms | 1265 | PASS |
-| TC006 | Dental Partial Approval — Cosmetic Exclusion | PARTIAL | PARTIAL | 8000.0 | 0.985 | 0 ms | 655 | PASS |
-| TC007 | MRI Without Pre-Authorization | REJECTED | REJECTED | 0.0 | 0.893 | 0 ms | 3740 | PASS |
-| TC008 | Per-Claim Limit Exceeded | REJECTED | REJECTED | 0.0 | 0.94 | 0 ms | 2570 | PASS |
-| TC009 | Fraud Signal — Multiple Same-Day Claims | MANUAL_REVIEW | MANUAL_REVIEW | 4320.0 | 0.91 | 0 ms | 2260 | PASS |
-| TC010 | Network Hospital — Discount Applied | APPROVED | APPROVED | 3240.0 | 0.985 | 0 ms | 1308 | PASS |
-| TC011 | Component Failure — Graceful Degradation | APPROVED | APPROVED | 4000.0 | 0.59 | 0 ms | 2654 | PASS |
-| TC012 | Excluded Treatment | REJECTED | REJECTED | 0.0 | 0.932 | 0 ms | 2606 | PASS |
+| TC004 | Clean Consultation — Full Approval | APPROVED | APPROVED | 1350.0 | 0.985 | 16 ms | 1361 | PASS |
+| TC005 | Waiting Period — Diabetes | REJECTED | REJECTED | 0.0 | 0.977 | 0 ms | 1268 | PASS |
+| TC006 | Dental Partial Approval — Cosmetic Exclusion | PARTIAL | PARTIAL | 8000.0 | 0.985 | 0 ms | 657 | PASS |
+| TC007 | MRI Without Pre-Authorization | REJECTED | REJECTED | 0.0 | 0.893 | 0 ms | 3732 | PASS |
+| TC008 | Per-Claim Limit Exceeded | REJECTED | REJECTED | 0.0 | 0.94 | 0 ms | 2640 | PASS |
+| TC009 | Fraud Signal — Multiple Same-Day Claims | MANUAL_REVIEW | MANUAL_REVIEW | 4320.0 | 0.91 | 0 ms | 2284 | PASS |
+| TC010 | Network Hospital — Discount Applied | APPROVED | APPROVED | 3240.0 | 0.985 | 0 ms | 1279 | PASS |
+| TC011 | Component Failure — Graceful Degradation | APPROVED | APPROVED | 4000.0 | 0.59 | 0 ms | 2592 | PASS |
+| TC012 | Excluded Treatment | REJECTED | REJECTED | 0.0 | 0.932 | 0 ms | 2628 | PASS |
 
 ## Aggregate metrics
 
-- **Latency**: P50 = 0 ms · P95 = 0 ms · avg = 2 ms · median = 0 ms
-- **Tokens**: 13,779 in + 4,692 out = 18,471 total · est. cost ≈ $0.000000
+- **Latency**: P50 = 0 ms · P95 = 0 ms · avg = 1 ms · median = 0 ms
+- **Tokens**: 13,709 in + 4,732 out = 18,441 total · est. cost ≈ $0.000000
 - **Extraction validation issues** (hallucination proxy): 11 across 5 cases
 - **Cross-document contradictions detected**: 1
 - **Deliberation cycles triggered**: 5

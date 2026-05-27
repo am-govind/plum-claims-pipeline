@@ -5,13 +5,31 @@ For every significant component, this doc states:
 - the output it produces (i.e. what it writes onto `ClaimState`)
 - the typed errors it can raise
 - the trace step it emits
+- the domain events it records (where applicable)
 
-Read together with the [Pydantic models](../backend/app/models) — those are
-the executable spec. This doc is the reading order for a new engineer.
+Read together with the domain models under
+[`backend/app/domain/`](../backend/app/domain) — those are the
+executable spec. This doc is the reading order for a new engineer.
+
+## Layering and wiring
+
+The backend follows hex-layer naming:
+
+- `backend/app/domain/` — pure types and rules (no I/O).
+- `backend/app/application/` — pipeline, agents, and abstract ports.
+- `backend/app/infrastructure/` — concrete adapters (SQLAlchemy, JSON
+  loaders, Gemini/Mock providers, in-memory event bus + handlers).
+- `backend/app/interfaces/http/` — FastAPI routers and `Depends()`
+  providers.
+
+Everything is constructed at the composition root
+([`backend/app/composition.py`](../backend/app/composition.py)) into a
+single `Container` and handed out via `Depends()`. There are no
+module-level singletons.
 
 ## Shared types
 
-All defined in [backend/app/models/](../backend/app/models):
+Defined under [`backend/app/domain/`](../backend/app/domain):
 
 - `ClaimInput` — submission payload (member, category, treatment date,
   amount, hospital, YTD, claims_history, documents, simulate flag).
@@ -47,20 +65,39 @@ All defined in [backend/app/models/](../backend/app/models):
   `MANUAL_REVIEW`, `NEEDS_REUPLOAD`, `NEEDS_CORRECTION`,
   `NEEDS_CLARIFICATION`, `ESCALATED_MEDICAL_REVIEW`,
   `FRAUD_INVESTIGATION`.
+- `DomainEvent` and seven concrete events
+  (`ClaimApproved`, `ClaimPartiallyApproved`, `ClaimRejected`,
+  `ManualReviewRequired`, `ClaimHaltedEarly`, `ComponentDegraded`,
+  `FraudSignalsRaised`) under
+  [`backend/app/domain/events/`](../backend/app/domain/events). Frozen
+  dataclasses carrying `claim_id`, `occurred_at`, and a small,
+  hand-picked payload per event.
+
+`ClaimState` also exposes three aggregate methods:
+
+- `state.record_event(event)` — buffer a domain event for later dispatch.
+- `state.pull_events()` — return all buffered events and clear the
+  buffer (called once per pipeline run by the API layer / eval runner).
+- `state.halt_early(reason, user_message)` — set the three
+  `early_stop*` fields **and** record a `ClaimHaltedEarly` event in
+  one atomic step. All early-stop sites (intake + document
+  verification) go through this method so the field set and the event
+  can never drift apart.
 
 Errors all derive from `ClaimError` and translate to user-facing messages
-through `error_to_user_message` ([backend/app/models/errors.py](../backend/app/models/errors.py)).
+through `error_to_user_message` ([backend/app/domain/errors.py](../backend/app/domain/errors.py)).
 
 ---
 
 ## IntakeAgent
 
-[backend/app/agents/intake.py](../backend/app/agents/intake.py)
+[backend/app/application/agents/intake.py](../backend/app/application/agents/intake.py)
 
 | Field | Value |
 | --- | --- |
 | **Reads** | `state.input` (member_id, policy_id, claimed_amount) |
-| **Writes** | `state.findings` (BELOW_MIN_CLAIM if applicable); `state.early_stop` + `state.early_stop_user_message` if member or policy not found |
+| **Writes** | `state.findings` (BELOW_MIN_CLAIM if applicable). On member-not-found or policy-mismatch calls `state.halt_early(reason, user_message)`, which sets `early_stop` / `early_stop_reason` / `early_stop_user_message` and records `ClaimHaltedEarly` |
+| **Events** | `ClaimHaltedEarly` (via `state.halt_early`) on early-stop paths |
 | **Trace step** | `intake` |
 | **Errors** | None raised; failures recorded as early-stop |
 | **Critical?** | Yes (re-raised on unhandled exception) |
@@ -69,25 +106,28 @@ through `error_to_user_message` ([backend/app/models/errors.py](../backend/app/m
 
 ## DocumentVerificationAgent
 
-[backend/app/agents/document_verification.py](../backend/app/agents/document_verification.py)
+[backend/app/application/agents/document_verification.py](../backend/app/application/agents/document_verification.py)
 
 | Field | Value |
 | --- | --- |
 | **Reads** | `state.input.documents`, `state.input.claim_category`, `policy.document_requirements` |
-| **Writes** | `state.early_stop`, `state.early_stop_reason`, `state.early_stop_user_message` on failure |
+| **Writes** | On failure calls `state.halt_early(err.code, error_to_user_message(err))`, which sets the three `early_stop*` fields and records `ClaimHaltedEarly` |
+| **Events** | `ClaimHaltedEarly` (via `state.halt_early`) on every failure path |
 | **Trace step** | `document_verification` |
 | **Errors raised internally** | `DocumentTypeMismatchError`, `UnreadableDocumentError`, `PatientMismatchError` (each translated to a specific user message) |
 | **Critical?** | Yes |
 
 The three early-stop conditions cover TC001 (wrong type), TC002
 (unreadable), TC003 (patient mismatch). The user message is built by
-`error_to_user_message`.
+`error_to_user_message`. The agent never mutates the early-stop fields
+directly — it always goes through `state.halt_early` so the field set
+and the `ClaimHaltedEarly` event stay coupled.
 
 ---
 
 ## ExtractionAgent
 
-[backend/app/agents/extraction.py](../backend/app/agents/extraction.py)
+[backend/app/application/agents/extraction.py](../backend/app/application/agents/extraction.py)
 
 | Field | Value |
 | --- | --- |
@@ -98,7 +138,7 @@ The three early-stop conditions cover TC001 (wrong type), TC002
 | **Critical?** | No (orchestrator catches; degrades) |
 
 After the LLM call, every extracted doc passes through
-[`validate_extraction`](../backend/app/agents/extraction_validator.py):
+[`validate_extraction`](../backend/app/domain/services/extraction_validator.py):
 bill-total reconciliation, document-date sanity, doctor-registration
 regex, negative-amount check, patient-name presence. Each failed check
 appends a string to `validation_issues` and lowers
@@ -108,7 +148,7 @@ appends a string to `validation_issues` and lowers
 
 ## ContradictionDetectionAgent
 
-[backend/app/agents/contradiction_detection.py](../backend/app/agents/contradiction_detection.py)
+[backend/app/application/agents/contradiction_detection.py](../backend/app/application/agents/contradiction_detection.py)
 
 | Field | Value |
 | --- | --- |
@@ -136,7 +176,7 @@ stays green.
 
 ## PolicyAdjudicationAgent
 
-[backend/app/agents/policy_adjudication.py](../backend/app/agents/policy_adjudication.py)
+[backend/app/application/agents/policy_adjudication.py](../backend/app/application/agents/policy_adjudication.py)
 
 | Field | Value |
 | --- | --- |
@@ -163,7 +203,7 @@ logic and eval suite are unchanged:
 
 ## FinancialCalculationAgent
 
-[backend/app/agents/financial_calculation.py](../backend/app/agents/financial_calculation.py)
+[backend/app/application/agents/financial_calculation.py](../backend/app/application/agents/financial_calculation.py)
 
 | Field | Value |
 | --- | --- |
@@ -194,12 +234,13 @@ Breakdown keys (for the `Decision.breakdown` dict): `claimed_amount`,
 
 ## FraudDetectionAgent
 
-[backend/app/agents/fraud_detection.py](../backend/app/agents/fraud_detection.py)
+[backend/app/application/agents/fraud_detection.py](../backend/app/application/agents/fraud_detection.py)
 
 | Field | Value |
 | --- | --- |
 | **Reads** | `state.input` (claims_history, claimed_amount, simulate flag), `policy.fraud_thresholds` |
 | **Writes** | `state.fraud_signals`, FRAUD_SIGNALS finding |
+| **Events** | `FraudSignalsRaised` whenever at least one signal is produced |
 | **Trace step** | `fraud_detection` |
 | **Errors raised** | `SimulatedComponentFailure` if `simulate_component_failure=True`; orchestrator catches and degrades (TC011) |
 | **Critical?** | No |
@@ -211,12 +252,13 @@ auto-MR threshold breach.
 
 ## DecisionSynthesizerAgent
 
-[backend/app/agents/decision_synthesizer.py](../backend/app/agents/decision_synthesizer.py)
+[backend/app/application/agents/decision_synthesizer.py](../backend/app/application/agents/decision_synthesizer.py)
 
 | Field | Value |
 | --- | --- |
 | **Reads** | `state.findings`, `state.line_decisions`, `state.fraud_signals`, `state.contradictions`, `state.agent_results`, `state.degraded`, `state.failed_components`, `state.cost` |
 | **Writes** | `state.decision` (Decision, including `explanation_tree`, `cost`, `confidence_breakdown`), `state.confidence` |
+| **Events** | One of `ClaimApproved`, `ClaimPartiallyApproved`, `ClaimRejected`, or `ManualReviewRequired` based on the final `DecisionStatus` |
 | **Trace step** | `decision_synthesizer` |
 | **Critical?** | Yes |
 
@@ -241,13 +283,13 @@ Status precedence:
 8. **REJECTED** as fallback when `final_amount == 0` and no other reason.
 
 Confidence comes from the formal formula in
-[`backend/app/decision/confidence.py`](../backend/app/decision/confidence.py):
+[`backend/app/domain/services/confidence.py`](../backend/app/domain/services/confidence.py):
 `C_final = clip(Σ wᵢ·Cᵢ − α·contradiction − β·degraded, 0, 1)`. Each
 `wᵢ·Cᵢ` term is exposed on `decision.confidence_breakdown` and rendered
 in the UI.
 
 The synthesizer also builds the `DecisionNode` explanation tree
-(via [`build_explanation_tree`](../backend/app/decision/explanation_builder.py))
+(via [`build_explanation_tree`](../backend/app/domain/services/explanation_builder.py))
 and attaches `state.cost` (with all per-LLM-call usage and per-node
 latency records) to the decision.
 
@@ -277,7 +319,8 @@ policy checks passing) does fire this cycle and the trace shows it.
 
 ## LLMProvider
 
-[backend/app/llm/base.py](../backend/app/llm/base.py)
+[backend/app/application/ports/llm.py](../backend/app/application/ports/llm.py) (port)
+· [backend/app/infrastructure/llm/](../backend/app/infrastructure/llm) (adapters)
 
 ```python
 class LLMProvider(ABC):
@@ -307,7 +350,7 @@ to `state.cost.llm_calls`.
 
 ## TraceRecorder
 
-[backend/app/trace/recorder.py](../backend/app/trace/recorder.py)
+[backend/app/application/recorder.py](../backend/app/application/recorder.py) · `TraceStep` model in [backend/app/domain/trace/](../backend/app/domain/trace)
 
 ```python
 class TraceRecorder:
@@ -326,7 +369,7 @@ captured.
 
 ## API endpoints
 
-[backend/app/api/](../backend/app/api)
+[backend/app/interfaces/http/](../backend/app/interfaces/http)
 
 | Method | Path | Body / params | Returns |
 | --- | --- | --- | --- |
@@ -337,6 +380,55 @@ captured.
 | GET | `/api/policy` | — | Policy summary (categories, doc requirements, network hospitals, thresholds) |
 | GET | `/api/eval/run` | — | `{total, passed, failed, results: [...]}` |
 | GET | `/health` | — | `{status, llm_provider}` |
+
+The `POST /api/claims` and `GET /api/eval/run` paths both finish with:
+
+```python
+state = await pipeline(state)
+await claims.save(state)
+await event_bus.publish_all(state.pull_events())
+```
+
+so domain events are dispatched exactly once per claim, after state is
+persisted.
+
+---
+
+## EventBus and handlers
+
+Port: [backend/app/application/ports/event_bus.py](../backend/app/application/ports/event_bus.py)
+· Adapter: [backend/app/infrastructure/events/](../backend/app/infrastructure/events)
+
+```python
+class EventBus(ABC):
+    def subscribe(self, handler: EventHandler) -> None: ...
+    async def publish(self, event: DomainEvent) -> None: ...
+    async def publish_all(self, events: Iterable[DomainEvent]) -> None: ...
+
+class EventHandler(ABC):
+    async def handle(self, event: DomainEvent) -> None: ...
+```
+
+| Implementation | Behaviour |
+| --- | --- |
+| `InMemoryEventBus` | Sequential async fan-out to subscribed handlers; per-handler exception isolation — one failing handler never breaks another or fails the request |
+| `StructlogEventHandler` | Logs every event as a structured `domain_event` log line. Default audit sink |
+| `NotificationStubHandler` | Logs a `would_notify` line for `ClaimApproved`, `ClaimRejected`, `ClaimPartiallyApproved`, `ManualReviewRequired`, and `ClaimHaltedEarly`. Swap the body for an SMS/email gateway in production |
+
+Both handlers are subscribed by the composition root
+([`backend/app/composition.py`](../backend/app/composition.py)); they
+are injected into the FastAPI layer via the `get_event_bus` `Depends()`
+provider and into the eval runner via the `Container`.
+
+| Event | Raised by | Trigger |
+| --- | --- | --- |
+| `ClaimApproved` | `DecisionSynthesizerAgent` | Final status = `APPROVED` |
+| `ClaimPartiallyApproved` | `DecisionSynthesizerAgent` | Final status = `PARTIAL` |
+| `ClaimRejected` | `DecisionSynthesizerAgent` | Final status = `REJECTED` |
+| `ManualReviewRequired` | `DecisionSynthesizerAgent` | Final status in `{MANUAL_REVIEW, NEEDS_REUPLOAD, NEEDS_CORRECTION, NEEDS_CLARIFICATION, ESCALATED_MEDICAL_REVIEW, FRAUD_INVESTIGATION}` |
+| `ClaimHaltedEarly` | `IntakeAgent`, `DocumentVerificationAgent` (via `state.halt_early`) | Member/policy lookup failure, wrong / unreadable / mismatched documents |
+| `ComponentDegraded` | `pipeline._wrap` | Non-critical agent raised an exception caught by the orchestrator |
+| `FraudSignalsRaised` | `FraudDetectionAgent` | At least one fraud signal produced |
 
 ---
 
