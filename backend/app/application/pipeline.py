@@ -10,12 +10,17 @@ instead of crashing.
 The graph is deliberately linear; we use LangGraph (rather than a plain
 chain) so we get state management, native step interception, and an obvious
 extension point for parallel branches (e.g. fanning out extraction).
+
+Dependencies (the rule engine, the LLM provider, the policy, the
+confidence config) are passed in via `PipelineDeps`; the composition
+root constructs them and `build_pipeline` wires them into the graph.
+The pipeline itself owns no global state.
 """
 
 from __future__ import annotations
 
-import asyncio
 import time
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from langgraph.graph import END, StateGraph
@@ -30,9 +35,23 @@ from app.application.agents.fraud_detection import FraudDetectionAgent
 from app.application.agents.intake import IntakeAgent
 from app.application.agents.policy_adjudication import PolicyAdjudicationAgent
 from app.application.ports.llm import LLMProvider
+from app.application.ports.rule_engine import RuleEngine
 from app.application.recorder import TraceRecorder
 from app.domain.claim import ClaimState
+from app.domain.events import ComponentDegraded
+from app.domain.policy.terms import PolicyTerms
+from app.domain.services.confidence import ConfidenceConfig
 from app.domain.trace import TraceStatus
+
+
+@dataclass(frozen=True)
+class PipelineDeps:
+    """Everything `build_pipeline` needs to instantiate the agents."""
+
+    policy: PolicyTerms
+    rule_engine: RuleEngine
+    llm_provider: LLMProvider
+    confidence_config: ConfidenceConfig
 
 
 def _wrap(agent: BaseAgent) -> Callable[[ClaimState], Any]:
@@ -71,6 +90,13 @@ def _wrap(agent: BaseAgent) -> Callable[[ClaimState], Any]:
             state.degraded = True
             if agent.name not in state.failed_components:
                 state.failed_components.append(agent.name)
+            state.record_event(
+                ComponentDegraded(
+                    claim_id=state.claim_id,
+                    component=agent.name,
+                    error=f"{e.__class__.__name__}: {e}",
+                )
+            )
             return state
 
     node.__name__ = f"{agent.name}_node"
@@ -193,16 +219,22 @@ async def _policy_reconsider_node(state: ClaimState) -> ClaimState:
     return state
 
 
-def build_graph(*, llm_provider: LLMProvider | None = None):
-    """Build (but don't compile yet) the StateGraph."""
-    intake = IntakeAgent()
-    verify = DocumentVerificationAgent()
-    extract = ExtractionAgent(provider=llm_provider)
+CompiledPipeline = Any
+"""Opaque type for a compiled LangGraph; the concrete class is an internal
+detail of LangGraph and varies across minor versions. Treat it as a value
+to pass through to `run_pipeline`."""
+
+
+def build_pipeline(deps: PipelineDeps) -> CompiledPipeline:
+    """Construct each agent with its dependencies and compile the LangGraph."""
+    intake = IntakeAgent(policy=deps.policy)
+    verify = DocumentVerificationAgent(policy=deps.policy)
+    extract = ExtractionAgent(llm_provider=deps.llm_provider)
     contradict = ContradictionDetectionAgent()
-    policy = PolicyAdjudicationAgent()
-    finance = FinancialCalculationAgent()
-    fraud = FraudDetectionAgent()
-    synth = DecisionSynthesizerAgent()
+    policy = PolicyAdjudicationAgent(rule_engine=deps.rule_engine)
+    finance = FinancialCalculationAgent(policy=deps.policy)
+    fraud = FraudDetectionAgent(policy=deps.policy)
+    synth = DecisionSynthesizerAgent(confidence_config=deps.confidence_config)
 
     g: StateGraph = StateGraph(ClaimState)
     g.add_node("intake", _wrap(intake))
@@ -227,39 +259,12 @@ def build_graph(*, llm_provider: LLMProvider | None = None):
     g.add_conditional_edges("fraud_detection", _route_after_fraud)
     g.add_edge("policy_reconsider", "decision_synthesizer")
     g.add_edge("decision_synthesizer", END)
-    return g
+    return g.compile()
 
 
-_compiled_app = None
-_compiled_provider_id: int | None = None
-
-
-def _get_app(llm_provider: LLMProvider | None = None):
-    """Compile the graph once per provider instance.
-
-    Tests pass a fresh provider per run so we recompile when the provider
-    changes. In production this is called once on startup.
-    """
-    global _compiled_app, _compiled_provider_id
-    pid = id(llm_provider) if llm_provider is not None else 0
-    if _compiled_app is None or _compiled_provider_id != pid:
-        _compiled_app = build_graph(llm_provider=llm_provider).compile()
-        _compiled_provider_id = pid
-    return _compiled_app
-
-
-async def run_pipeline(
-    state: ClaimState, *, llm_provider: LLMProvider | None = None
-) -> ClaimState:
-    """Execute the claim through the LangGraph pipeline."""
-    app = _get_app(llm_provider)
-    result = await app.ainvoke(state)
+async def run_pipeline(state: ClaimState, pipeline: CompiledPipeline) -> ClaimState:
+    """Execute a `ClaimState` through a pre-compiled pipeline."""
+    result = await pipeline.ainvoke(state)
     if isinstance(result, ClaimState):
         return result
     return ClaimState.model_validate(result)
-
-
-def run_pipeline_sync(
-    state: ClaimState, *, llm_provider: LLMProvider | None = None
-) -> ClaimState:
-    return asyncio.run(run_pipeline(state, llm_provider=llm_provider))
