@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.models.claim import (
+from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
     ClaimState,
@@ -12,7 +12,7 @@ from app.models.claim import (
     DocumentType,
     ExtractedDocument,
 )
-from app.policy.rules import RuleEngine
+from app.domain.policy.rules import RuleEngine
 
 
 def _state(*, category=ClaimCategory.CONSULTATION, diagnosis=None, member_id="EMP001"):

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.decision.confidence import compute_confidence
-from app.models.agent_result import AgentResult
-from app.models.claim import (
+from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
     ClaimState,
     DocumentInput,
     DocumentType,
 )
+from app.domain.decision import AgentResult
+from app.domain.services.confidence import compute_confidence
 
 
 def _state(*, degraded: bool = False, with_all_agents: bool = True) -> ClaimState:

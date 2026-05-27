@@ -6,8 +6,8 @@ from datetime import date
 
 import pytest
 
-from app.agents.contradiction_detection import ContradictionDetectionAgent
-from app.models.claim import (
+from app.application.agents.contradiction_detection import ContradictionDetectionAgent
+from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
     ClaimState,

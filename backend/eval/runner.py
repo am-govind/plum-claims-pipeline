@@ -15,10 +15,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from app.application.pipeline import run_pipeline
 from app.config import get_settings
-from app.graph.pipeline import run_pipeline
-from app.llm.mock import MockProvider
-from app.models.claim import (
+from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
     ClaimsHistoryEntry,
@@ -27,6 +26,7 @@ from app.models.claim import (
     DocumentQuality,
     DocumentType,
 )
+from app.infrastructure.llm.mock import MockProvider
 
 
 def _doc_from_case(d: dict[str, Any]) -> DocumentInput:

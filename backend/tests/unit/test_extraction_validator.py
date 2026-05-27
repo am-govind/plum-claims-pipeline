@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from app.agents.extraction_validator import validate_extraction
-from app.models.claim import DocumentType, ExtractedDocument, LineItem
+from app.domain.claim import DocumentType, ExtractedDocument, LineItem
+from app.domain.services.extraction_validator import validate_extraction
 
 
 def _doc(**kwargs):

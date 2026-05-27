@@ -18,7 +18,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_claims.db")
 @pytest.fixture(autouse=True)
 def _reset_pipeline_cache():
     """Force the LangGraph compile cache to reset between tests."""
-    import app.graph.pipeline as p
+    import app.application.pipeline as p
 
     p._compiled_app = None
     p._compiled_provider_id = None

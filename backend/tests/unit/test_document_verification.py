@@ -6,8 +6,8 @@ from datetime import date
 
 import pytest
 
-from app.agents.document_verification import DocumentVerificationAgent
-from app.models.claim import (
+from app.application.agents.document_verification import DocumentVerificationAgent
+from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
     ClaimState,

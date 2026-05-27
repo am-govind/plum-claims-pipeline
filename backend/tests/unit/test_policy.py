@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.models.claim import ClaimCategory, ExtractedDocument, LineItem
-from app.policy.coverage import apply_financial_calculation, line_item_excluded_reason
-from app.policy.exclusions import diagnosis_excluded_reason
-from app.policy.loader import is_network_hospital, load_policy
-from app.policy.pre_auth import pre_auth_violation
-from app.policy.waiting_periods import waiting_period_violation
+from app.domain.claim import ClaimCategory, ExtractedDocument, LineItem
+from app.domain.policy.coverage import apply_financial_calculation, line_item_excluded_reason
+from app.domain.policy.exclusions import diagnosis_excluded_reason
+from app.domain.policy.pre_auth import pre_auth_violation
+from app.domain.policy.terms import is_network_hospital, load_policy
+from app.domain.policy.waiting_periods import waiting_period_violation
 
 
 def test_load_policy_smoke():

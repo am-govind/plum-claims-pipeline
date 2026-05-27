@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.graph.pipeline import (
+from app.application.pipeline import (
     POLICY_RECONSIDER_CAP,
     RE_EXTRACTION_CAP,
     _needs_policy_reconsider,
     _needs_re_extraction,
 )
-from app.models.claim import (
+from app.domain.claim import (
     ClaimCategory,
     ClaimInput,
     ClaimState,
@@ -18,7 +18,7 @@ from app.models.claim import (
     DocumentType,
     ExtractedDocument,
 )
-from app.models.decision import PolicyFinding
+from app.domain.decision import PolicyFinding
 
 
 def _state() -> ClaimState:
