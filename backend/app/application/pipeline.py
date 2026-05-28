@@ -34,13 +34,14 @@ from app.application.agents.financial_calculation import FinancialCalculationAge
 from app.application.agents.fraud_detection import FraudDetectionAgent
 from app.application.agents.intake import IntakeAgent
 from app.application.agents.policy_adjudication import PolicyAdjudicationAgent
-from app.application.ports.llm import LLMProvider
+from app.application.ports.llm import LLMProvider, LLMTimeoutError, ProviderError
 from app.application.ports.rule_engine import RuleEngine
 from app.application.recorder import TraceRecorder
 from app.domain.claim import ClaimState
 from app.domain.events import ComponentDegraded
 from app.domain.policy.terms import PolicyTerms
 from app.domain.services.confidence import ConfidenceConfig
+from app.domain.services.extraction_validator import validate_extraction
 from app.domain.trace import TraceStatus
 
 
@@ -164,36 +165,131 @@ def _route_after_fraud(state: ClaimState) -> str:
     return "decision_synthesizer"
 
 
-async def _re_verification_node(state: ClaimState) -> ClaimState:
-    """Lightweight retry: bump the iteration counter and trace it.
+def _make_re_verification_node(
+    provider: LLMProvider,
+) -> Callable[[ClaimState], Any]:
+    """Build the deliberation node that actually re-runs extraction.
 
-    A real implementation would re-run a focused extraction pass (e.g.
-    higher-temperature retry, or run a different model). We surface the
-    cycle on the trace and continue; the next pass through extraction
-    already benefits from the validation feedback recorded above.
+    The node walks ``state.extracted`` for entries that are still below
+    the confidence threshold or carry validation issues, summarises those
+    issues into a feedback string, and calls the LLM provider again with
+    ``feedback=...`` set. The provider may incorporate the feedback
+    (Gemini) or simply record it on ``raw`` for audit (Mock). Either way
+    we re-run the deterministic validator on the new entry and swap it
+    into ``state.extracted`` in place.
+
+    Errors from the retry are non-fatal — we keep the original
+    extraction, drop confidence on the trace, and move on. The
+    iteration counter is bumped exactly once per invocation so the
+    ``RE_EXTRACTION_CAP`` guard in ``_needs_re_extraction`` cannot loop.
     """
-    rec = TraceRecorder(state)
-    state.deliberation_iterations["re_extraction"] = (
-        state.deliberation_iterations.get("re_extraction", 0) + 1
-    )
-    issues = sum(len(d.validation_issues) for d in state.extracted)
-    rec.record(
-        "re_verification",
-        status=TraceStatus.WARNING,
-        summary=(
-            f"Deliberation cycle: {issues} extraction validation issue(s) "
-            f"and/or low extraction confidence; routing back to extraction "
-            f"(iteration {state.deliberation_iterations['re_extraction']}/"
-            f"{RE_EXTRACTION_CAP})"
-        ),
-        evidence={
-            "iteration": state.deliberation_iterations["re_extraction"],
-            "cap": RE_EXTRACTION_CAP,
-            "extraction_issues": issues,
-        },
-        latency_ms=0,
-    )
-    return state
+
+    async def _node(state: ClaimState) -> ClaimState:
+        rec = TraceRecorder(state)
+        node_start = time.perf_counter()
+
+        targets: list[tuple[int, str, str]] = []
+        for idx, ed in enumerate(state.extracted):
+            needs_retry = (
+                ed.extraction_confidence < EXTRACTION_LOW_CONF_THRESHOLD
+                or bool(ed.validation_issues)
+            )
+            if not needs_retry:
+                continue
+            reasons: list[str] = list(ed.validation_issues)
+            if ed.extraction_confidence < EXTRACTION_LOW_CONF_THRESHOLD:
+                reasons.append(
+                    f"prior extraction confidence was "
+                    f"{ed.extraction_confidence:.2f}, below "
+                    f"{EXTRACTION_LOW_CONF_THRESHOLD:.2f}"
+                )
+            targets.append((idx, ed.file_id, "\n- " + "\n- ".join(reasons)))
+
+        retried_files: list[str] = []
+        improved_files: list[str] = []
+        failed_files: list[dict[str, str]] = []
+
+        for idx, file_id, feedback in targets:
+            di = next(
+                (d for d in state.input.documents if d.file_id == file_id), None
+            )
+            if di is None:
+                continue
+            prior = state.extracted[idx]
+            try:
+                new_ed, usage = await provider.extract_document(
+                    di,
+                    hint_category=state.input.claim_category.value,
+                    feedback=feedback,
+                )
+                state.cost.add_llm(usage)
+                validate_extraction(new_ed)
+                state.extracted[idx] = new_ed
+                retried_files.append(file_id)
+                # We count an improvement when the second pass cleared
+                # at least one validation issue or raised confidence by
+                # at least 5 percentage points.
+                if (
+                    len(new_ed.validation_issues) < len(prior.validation_issues)
+                    or new_ed.extraction_confidence
+                    >= prior.extraction_confidence + 0.05
+                ):
+                    improved_files.append(file_id)
+            except (ProviderError, LLMTimeoutError) as e:
+                failed_files.append(
+                    {"file_id": file_id, "error": f"{type(e).__name__}: {e}"}
+                )
+            except Exception as e:  # noqa: BLE001
+                failed_files.append(
+                    {"file_id": file_id, "error": f"{type(e).__name__}: {e}"}
+                )
+
+        state.deliberation_iterations["re_extraction"] = (
+            state.deliberation_iterations.get("re_extraction", 0) + 1
+        )
+
+        latency_ms = int((time.perf_counter() - node_start) * 1000)
+        if not targets:
+            status = TraceStatus.OK
+            summary = (
+                "Deliberation cycle entered but no extracted document qualified "
+                "for retry (this is a defensive no-op)"
+            )
+        elif improved_files:
+            status = TraceStatus.OK
+            summary = (
+                f"Re-extracted {len(retried_files)} document(s) with provider="
+                f"{provider.name}; {len(improved_files)} improved "
+                f"({', '.join(improved_files)})"
+            )
+        else:
+            status = TraceStatus.WARNING
+            summary = (
+                f"Re-extracted {len(retried_files)} document(s) with provider="
+                f"{provider.name}; no measurable improvement "
+                f"(provider={provider.name} may not act on feedback, or the "
+                f"underlying document didn't support a better extraction)"
+            )
+
+        rec.record(
+            "re_verification",
+            status=status,
+            summary=summary,
+            evidence={
+                "iteration": state.deliberation_iterations["re_extraction"],
+                "cap": RE_EXTRACTION_CAP,
+                "provider": provider.name,
+                "targets": [t[1] for t in targets],
+                "retried": retried_files,
+                "improved": improved_files,
+                "failed": failed_files,
+            },
+            latency_ms=latency_ms,
+        )
+        return state
+
+    _node.__name__ = "re_verification_node"
+    return _node
 
 
 async def _policy_reconsider_node(state: ClaimState) -> ClaimState:
@@ -240,7 +336,7 @@ def build_pipeline(deps: PipelineDeps) -> CompiledPipeline:
     g.add_node("intake", _wrap(intake))
     g.add_node("document_verification", _wrap(verify))
     g.add_node("extraction", _wrap(extract))
-    g.add_node("re_verification", _re_verification_node)
+    g.add_node("re_verification", _make_re_verification_node(deps.llm_provider))
     g.add_node("contradiction_detection", _wrap(contradict))
     g.add_node("policy_adjudication", _wrap(policy))
     g.add_node("financial_calculation", _wrap(finance))
@@ -252,7 +348,11 @@ def build_pipeline(deps: PipelineDeps) -> CompiledPipeline:
     g.add_conditional_edges("intake", _route_after_intake)
     g.add_conditional_edges("document_verification", _route_after_verification)
     g.add_conditional_edges("extraction", _route_after_extraction)
-    g.add_edge("re_verification", "extraction")
+    # `re_verification` now does the retry work itself (it calls the
+    # provider again with feedback); flowing straight to
+    # contradiction_detection avoids a no-op pass back through
+    # extraction.
+    g.add_edge("re_verification", "contradiction_detection")
     g.add_edge("contradiction_detection", "policy_adjudication")
     g.add_edge("policy_adjudication", "financial_calculation")
     g.add_edge("financial_calculation", "fraud_detection")
