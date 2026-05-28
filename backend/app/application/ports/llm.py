@@ -27,12 +27,24 @@ class LLMTimeoutError(ProviderError):
 
 
 class LLMProvider(ABC):
-    """Extract a single document into ExtractedDocument; report usage."""
+    """Extract a single document into ExtractedDocument; report usage.
+
+    ``feedback`` is set by the deliberation cycle (re-extraction node) on
+    the second pass when the first extraction produced validation issues
+    or low confidence. Providers that can act on it (Gemini) include it
+    in the prompt and bump temperature; providers that can't (Mock) note
+    it on ``raw`` so the trace shows the retry happened even when the
+    answer didn't change.
+    """
 
     name: str = "abstract"
     model: str = "abstract"
 
     @abstractmethod
     async def extract_document(
-        self, doc: DocumentInput, *, hint_category: str | None = None
+        self,
+        doc: DocumentInput,
+        *,
+        hint_category: str | None = None,
+        feedback: str | None = None,
     ) -> tuple[ExtractedDocument, LLMUsage]: ...
