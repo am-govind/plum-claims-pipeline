@@ -20,6 +20,7 @@ from app.composition import compose
 from app.config import Settings
 from app.interfaces.http.routers.claims import router as claims_router
 from app.interfaces.http.routers.eval import router as eval_router
+from app.interfaces.http.routers.extraction import router as extraction_router
 from app.interfaces.http.routers.members import router as members_router
 
 
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(claims_router)
+    app.include_router(extraction_router)
     app.include_router(members_router)
     app.include_router(eval_router)
 

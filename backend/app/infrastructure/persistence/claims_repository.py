@@ -22,7 +22,16 @@ from app.infrastructure.persistence.orm import ClaimRecord
 
 
 def _state_to_json(state: ClaimState) -> dict[str, Any]:
-    return json.loads(state.model_dump_json())
+    """Serialise `ClaimState` for SQLite storage, stripping in-flight-only
+    fields. Uploaded image/PDF bytes (`bytes_b64`, `mime_type`) are only
+    useful during the synchronous request that extracted them — persisting
+    them would inflate the DB by several MB per claim without adding any
+    auditable signal beyond what's already in `extracted`."""
+    payload: dict[str, Any] = json.loads(state.model_dump_json())
+    for doc in payload.get("input", {}).get("documents", []) or []:
+        doc.pop("bytes_b64", None)
+        doc.pop("mime_type", None)
+    return payload
 
 
 class SqlAlchemyClaimRepository(ClaimRepository):
