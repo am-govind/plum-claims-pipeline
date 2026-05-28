@@ -25,9 +25,28 @@ class MockProvider(LLMProvider):
     model = "mock"
 
     async def extract_document(
-        self, doc: DocumentInput, *, hint_category: str | None = None
+        self,
+        doc: DocumentInput,
+        *,
+        hint_category: str | None = None,
+        feedback: str | None = None,
     ) -> tuple[ExtractedDocument, LLMUsage]:
         start = time.perf_counter()
+        if doc.content is None and doc.bytes_b64:
+            # Upload-without-content path: customer uploaded a file but we don't
+            # have a real vision model in this provider. Return an explicitly
+            # low-confidence stub so the UI can demo the upload flow end-to-end
+            # without a Gemini key and the trace makes it obvious that this came
+            # from the mock fallback rather than real OCR.
+            ed = ExtractedDocument(
+                file_id=doc.file_id,
+                document_type=doc.actual_type,
+                quality=doc.quality,
+                patient_name=doc.patient_name_on_doc,
+                extraction_confidence=0.45,
+                raw={"_mock_source": "uploaded_bytes_stub"},
+            )
+            return ed, _make_usage(self.model, doc, start, baseline_in=600, baseline_out=120)
         if doc.content is None:
             ed = ExtractedDocument(
                 file_id=doc.file_id,
@@ -51,6 +70,17 @@ class MockProvider(LLMProvider):
 
         try:
             doc_type = doc.actual_type
+            raw_payload = dict(c)
+            if feedback:
+                # The mock is deterministic — it can't "do better" on a
+                # second pass — but we surface the fact that a retry was
+                # requested on the trace so reviewers can see the
+                # deliberation cycle actually called the provider again.
+                raw_payload["_retry_feedback"] = feedback
+                raw_payload["_retry_note"] = (
+                    "mock provider is deterministic; feedback recorded for "
+                    "audit but extraction output unchanged"
+                )
             ed = ExtractedDocument(
                 file_id=doc.file_id,
                 document_type=doc_type,
@@ -69,7 +99,7 @@ class MockProvider(LLMProvider):
                 line_items=line_items,
                 total_amount=float(c["total"]) if c.get("total") is not None else None,
                 extraction_confidence=0.95,
-                raw=dict(c),
+                raw=raw_payload,
             )
             return ed, _make_usage(self.model, doc, start, baseline_in=400, payload=c)
         except (TypeError, ValueError) as e:
