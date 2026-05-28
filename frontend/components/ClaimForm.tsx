@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch, type Member, type PolicySummary } from "@/lib/api";
+import {
+  apiFetch,
+  type ExtractPreviewResponse,
+  type Member,
+  type PolicySummary,
+} from "@/lib/api";
+import { IS_DEV_MODE } from "@/lib/devMode";
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const DOCUMENT_TYPES = [
   "PRESCRIPTION",
@@ -28,6 +36,12 @@ type DocumentDraft = {
   doctor_name: string;
   doctor_registration: string;
   hospital_name: string;
+  bytes_b64?: string;
+  mime_type?: string;
+  extraction_confidence?: number;
+  extracted_by?: string;
+  extracting?: boolean;
+  extract_error?: string | null;
 };
 
 function emptyDoc(idx: number): DocumentDraft {
@@ -43,6 +57,40 @@ function emptyDoc(idx: number): DocumentDraft {
     doctor_registration: "",
     hospital_name: "",
   };
+}
+
+function isKnownDocType(t: string): boolean {
+  return (DOCUMENT_TYPES as readonly string[]).includes(t);
+}
+
+function isKnownQuality(q: string): boolean {
+  return (QUALITIES as readonly string[]).includes(q);
+}
+
+function stripDataUrlPrefix(dataUrl: string): string {
+  const comma = dataUrl.indexOf(",");
+  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+}
+
+function readFileAsBase64(
+  file: File
+): Promise<{ bytes_b64: string; mime_type: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("File read failed"));
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("FileReader did not return a string"));
+        return;
+      }
+      resolve({
+        bytes_b64: stripDataUrlPrefix(result),
+        mime_type: file.type || "application/octet-stream",
+      });
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export function ClaimForm() {
@@ -93,11 +141,112 @@ export function ClaimForm() {
     setDocs((d) => d.filter((_, j) => j !== i));
   }
 
+  function clearUpload(i: number) {
+    updateDoc(i, {
+      bytes_b64: undefined,
+      mime_type: undefined,
+      extraction_confidence: undefined,
+      extracted_by: undefined,
+      extract_error: null,
+    });
+  }
+
+  async function onPickFile(i: number, file: File | null) {
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      updateDoc(i, {
+        extract_error: `File is ${(file.size / 1024 / 1024).toFixed(1)} MB. Max upload size is 10 MB.`,
+      });
+      return;
+    }
+    let bytes_b64: string;
+    let mime_type: string;
+    try {
+      ({ bytes_b64, mime_type } = await readFileAsBase64(file));
+    } catch (err) {
+      updateDoc(i, {
+        extract_error:
+          err instanceof Error ? err.message : "Could not read selected file",
+      });
+      return;
+    }
+    updateDoc(i, {
+      file_name: file.name,
+      bytes_b64,
+      mime_type,
+      extracting: true,
+      extract_error: null,
+    });
+    const currentDoc = docs[i];
+    try {
+      const res = await apiFetch<ExtractPreviewResponse>(
+        "/api/claims/extract-preview",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            document: {
+              file_id: currentDoc.file_id,
+              file_name: file.name,
+              actual_type: currentDoc.actual_type,
+              quality: currentDoc.quality,
+              patient_name_on_doc: currentDoc.patient_name_on_doc || undefined,
+              bytes_b64,
+              mime_type,
+            },
+            hint_category: category,
+          }),
+        }
+      );
+      if (!res.ok || !res.extracted) {
+        updateDoc(i, {
+          extracting: false,
+          extract_error:
+            res.message ?? res.reason ?? "Extraction returned no data",
+        });
+        return;
+      }
+      const ed = res.extracted;
+      updateDoc(i, {
+        extracting: false,
+        extract_error: null,
+        actual_type: isKnownDocType(ed.document_type)
+          ? (ed.document_type as DocumentDraft["actual_type"])
+          : currentDoc.actual_type,
+        quality: isKnownQuality(ed.quality)
+          ? (ed.quality as DocumentDraft["quality"])
+          : currentDoc.quality,
+        patient_name_on_doc: ed.patient_name ?? currentDoc.patient_name_on_doc,
+        diagnosis: ed.diagnosis ?? currentDoc.diagnosis,
+        doctor_name: ed.doctor_name ?? currentDoc.doctor_name,
+        doctor_registration:
+          ed.doctor_registration ?? currentDoc.doctor_registration,
+        hospital_name: ed.hospital_name ?? currentDoc.hospital_name,
+        total_amount:
+          ed.total_amount != null
+            ? String(ed.total_amount)
+            : currentDoc.total_amount,
+        extraction_confidence: ed.extraction_confidence,
+        extracted_by: res.usage?.model ?? undefined,
+      });
+    } catch (err) {
+      updateDoc(i, {
+        extracting: false,
+        extract_error:
+          err instanceof Error ? err.message : "Extraction request failed",
+      });
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
+      // We deliberately do NOT send `bytes_b64`/`mime_type` here. Those were
+      // already extracted via /api/claims/extract-preview (or supplied as
+      // typed values) and the result has been folded back into the form's
+      // text fields. Re-sending bytes would trigger a second Gemini call at
+      // pipeline-time and discard any corrections the user just made.
       const documents = docs.map((d) => ({
         file_id: d.file_id,
         file_name: d.file_name,
@@ -121,7 +270,10 @@ export function ClaimForm() {
         claimed_amount: Number(claimedAmount),
         hospital_name: hospitalName || undefined,
         ytd_claims_amount: Number(ytdAmount || 0),
-        simulate_component_failure: simulateFailure,
+        // Belt-and-suspenders: even if `simulateFailure` somehow ends up
+        // true in a production build (e.g. stale React state from an
+        // earlier dev-mode session), we never propagate it to the API.
+        simulate_component_failure: IS_DEV_MODE ? simulateFailure : false,
         documents,
       };
       const res = await apiFetch<{ claim_id: string }>("/api/claims", {
@@ -208,14 +360,19 @@ export function ClaimForm() {
             step="0.01"
           />
         </Field>
-        <label className="col-span-2 mt-2 inline-flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={simulateFailure}
-            onChange={(e) => setSimulateFailure(e.target.checked)}
-          />
-          Simulate component failure (TC011)
-        </label>
+        {IS_DEV_MODE ? (
+          <label className="col-span-2 mt-2 inline-flex items-center gap-2 text-sm text-ink-500">
+            <input
+              type="checkbox"
+              checked={simulateFailure}
+              onChange={(e) => setSimulateFailure(e.target.checked)}
+            />
+            <span>
+              Dev-only: simulate component failure (TC011) — hidden in
+              production builds via <code>NEXT_PUBLIC_DEV_MODE=false</code>
+            </span>
+          </label>
+        ) : null}
         {requiredTypes.length > 0 ? (
           <div className="col-span-2 rounded-lg bg-ink-50 p-3 text-xs text-ink-600">
             <span className="font-semibold">Required for {category}:</span>{" "}
@@ -246,6 +403,58 @@ export function ClaimForm() {
                 >
                   Remove
                 </button>
+              </div>
+              <div className="mt-3 rounded-lg border border-dashed border-ink-300 bg-ink-50 p-3">
+                <label className="flex flex-wrap items-center gap-3 text-sm">
+                  <span className="font-medium text-ink-700">
+                    Upload document
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(e) =>
+                      onPickFile(i, e.target.files?.[0] ?? null)
+                    }
+                    className="text-xs"
+                    disabled={d.extracting}
+                  />
+                  {d.bytes_b64 ? (
+                    <button
+                      type="button"
+                      onClick={() => clearUpload(i)}
+                      className="text-xs text-rose-600 hover:underline"
+                    >
+                      Clear upload
+                    </button>
+                  ) : null}
+                </label>
+                {d.extracting ? (
+                  <div className="mt-2 text-xs text-ink-600">
+                    Extracting with {policy ? "configured provider" : "LLM"}…
+                  </div>
+                ) : null}
+                {d.extract_error ? (
+                  <div className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">
+                    {d.extract_error}
+                  </div>
+                ) : null}
+                {d.bytes_b64 &&
+                !d.extracting &&
+                !d.extract_error &&
+                d.extraction_confidence != null ? (
+                  <div className="mt-2 inline-flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                    <span>
+                      Auto-filled
+                      {d.extracted_by ? ` by ${d.extracted_by}` : ""}
+                    </span>
+                    <span className="font-mono">
+                      confidence {Math.round(d.extraction_confidence * 100)}%
+                    </span>
+                    <span className="text-emerald-700">
+                      · review and edit any field below before submitting
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 <Field label="File name">

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { IS_DEV_MODE } from "@/lib/devMode";
 
 export default function HomePage() {
   return (
@@ -23,12 +24,14 @@ export default function HomePage() {
           >
             Submit a claim
           </Link>
-          <Link
-            href="/eval"
-            className="inline-flex items-center justify-center rounded-lg border border-ink-200 bg-white px-5 py-2.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
-          >
-            Run the eval suite
-          </Link>
+          {IS_DEV_MODE ? (
+            <Link
+              href="/eval"
+              className="inline-flex items-center justify-center rounded-lg border border-ink-200 bg-white px-5 py-2.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
+            >
+              Run the eval suite
+            </Link>
+          ) : null}
         </div>
       </section>
 

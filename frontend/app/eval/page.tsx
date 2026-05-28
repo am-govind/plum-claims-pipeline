@@ -4,6 +4,7 @@ import { useState } from "react";
 import { apiFetch, type EvalRunResponse } from "@/lib/api";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TraceTimeline } from "@/components/TraceTimeline";
+import { IS_DEV_MODE } from "@/lib/devMode";
 
 type CaseRow = EvalRunResponse["results"][number];
 
@@ -12,6 +13,26 @@ export default function EvalPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  if (!IS_DEV_MODE) {
+    // The eval surface exposes the full test_cases.json (including
+    // expected outcomes). It's the review-only "did we pass all 12"
+    // dashboard, not a customer surface. Production builds disable
+    // it by setting NEXT_PUBLIC_DEV_MODE=false.
+    return (
+      <div className="rounded-2xl border border-ink-200 bg-white p-10 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Eval suite is review-only
+        </h1>
+        <p className="mt-3 text-sm text-ink-600">
+          This page renders the full 12-case fixture set with expected
+          outcomes and is only available in review builds. To enable it,
+          rebuild the frontend with{" "}
+          <code>NEXT_PUBLIC_DEV_MODE=true</code>.
+        </p>
+      </div>
+    );
+  }
 
   async function run() {
     setLoading(true);

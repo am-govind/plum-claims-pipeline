@@ -156,6 +156,43 @@ export type CaseMetrics = {
   deliberation_iterations: Record<string, number>;
 };
 
+export type ExtractedDocument = {
+  file_id: string;
+  document_type: string;
+  quality: string;
+  patient_name: string | null;
+  doctor_name: string | null;
+  doctor_registration: string | null;
+  diagnosis: string | null;
+  treatment: string | null;
+  medicines: string[];
+  tests_ordered: string[];
+  hospital_name: string | null;
+  bill_number: string | null;
+  document_date: string | null;
+  line_items: Array<{ description: string; amount: number }>;
+  total_amount: number | null;
+  extraction_confidence: number;
+  validation_issues: string[];
+  raw: Record<string, unknown>;
+};
+
+export type ExtractPreviewResponse = {
+  ok: boolean;
+  extracted: ExtractedDocument | null;
+  usage: {
+    model: string;
+    tokens_in: number;
+    tokens_out: number;
+    latency_ms: number;
+    usd_estimate: number;
+    file_id: string | null;
+  } | null;
+  validation_issues: string[];
+  reason: string | null;
+  message: string | null;
+};
+
 export type EvalRunResponse = {
   total: number;
   passed: number;

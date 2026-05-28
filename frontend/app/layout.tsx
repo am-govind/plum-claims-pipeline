@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { IS_DEV_MODE } from "@/lib/devMode";
 
 export const metadata: Metadata = {
   title: "Plum Claims Pipeline",
@@ -29,9 +30,11 @@ export default function RootLayout({
               <Link href="/submit" className="hover:text-ink-900">
                 Submit a claim
               </Link>
-              <Link href="/eval" className="hover:text-ink-900">
-                Eval suite
-              </Link>
+              {IS_DEV_MODE ? (
+                <Link href="/eval" className="hover:text-ink-900">
+                  Eval suite
+                </Link>
+              ) : null}
               <a
                 href="http://localhost:8000/docs"
                 target="_blank"
