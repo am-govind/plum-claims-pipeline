@@ -1,20 +1,4 @@
----
-title: Plum Claims Pipeline Backend
-emoji: 🩺
-colorFrom: indigo
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
-short_description: Multi-agent health-insurance claims processing pipeline.
----
 
-<!--
-  The block above is consumed by Hugging Face Spaces (Docker SDK) and
-  stripped from the rendered page. It lets the same repo be pushed to a
-  Space as-is — the root Dockerfile builds the backend, app_port matches
-  the EXPOSE line. See docs/DEPLOY.md for the full deployment guide.
--->
 
 # Plum Claims Pipeline
 
@@ -59,17 +43,17 @@ Gemini for real document upload with a single environment variable.
 
 ## Why this design
 
-| Concern | How it's handled |
-| --- | --- |
-| **Wrong / unreadable / mismatched documents** | Caught by `DocumentVerificationAgent` before any LLM call. The user gets a specific message naming the file and the action — never a generic error. |
-| **Hallucinated extractions** | Every extracted document is passed through a deterministic validator (bill-total reconciliation, date sanity, doctor-registration regex). Failures trigger the `re_verification` deliberation cycle. |
-| **Cross-document inconsistencies** | `ContradictionDetectionAgent` checks patient name, dates, hospital name, amount reconciliation, and diagnosis–treatment compatibility across all uploaded documents. |
-| **Policy logic in code** | Every rule lives in [`policy_rules.json`](policy_rules.json) and is evaluated by a small custom DSL in [`backend/app/domain/policy/rules.py`](backend/app/domain/policy/rules.py). Adding a rule is a JSON change, not a Python change. |
-| **Calculation order ambiguity** | `FinancialCalculationAgent` runs a fixed six-step ledger: line-item exclusions → network discount → co-pay → sub-limit cap → per-claim cap → YTD cap. The ordering is what makes TC010's `₹3,240` come out correct. |
-| **Component failures** | Non-critical agent exceptions are caught by the LangGraph wrapper; the trace records the failure, `state.degraded` is set, confidence drops, and the pipeline continues. TC011 exercises this end-to-end. |
-| **Explainability** | Every node writes a structured `TraceStep`. The synthesizer assembles a causal `DecisionExplanationTree` from the findings, contradictions, and signals — rendered as a clickable tree in the UI. |
-| **Confidence is not a vibe** | Computed by a formal weighted formula in [`backend/app/domain/services/confidence.py`](backend/app/domain/services/confidence.py): `Σ wᵢ · Cᵢ − α · contradictions − β · degraded`, with weights loaded from `policy_rules.json`. |
-| **Side effects are decoupled** | Agents publish `DomainEvent`s onto a `ClaimState` buffer; the HTTP layer drains them into an `InMemoryEventBus` after each run. Built-in subscribers: structured logging and a notification stub. |
+| Concern                                             | How it's handled                                                                                                                                                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Wrong / unreadable / mismatched documents** | Caught by `DocumentVerificationAgent` before any LLM call. The user gets a specific message naming the file and the action — never a generic error.                                                                                        |
+| **Hallucinated extractions**                  | Every extracted document is passed through a deterministic validator (bill-total reconciliation, date sanity, doctor-registration regex). Failures trigger the `re_verification` deliberation cycle.                                        |
+| **Cross-document inconsistencies**            | `ContradictionDetectionAgent` checks patient name, dates, hospital name, amount reconciliation, and diagnosis–treatment compatibility across all uploaded documents.                                                                       |
+| **Policy logic in code**                      | Every rule lives in[`policy_rules.json`](policy_rules.json) and is evaluated by a small custom DSL in [`backend/app/domain/policy/rules.py`](backend/app/domain/policy/rules.py). Adding a rule is a JSON change, not a Python change.          |
+| **Calculation order ambiguity**               | `FinancialCalculationAgent` runs a fixed six-step ledger: line-item exclusions → network discount → co-pay → sub-limit cap → per-claim cap → YTD cap. The ordering is what makes TC010's `₹3,240` come out correct.                 |
+| **Component failures**                        | Non-critical agent exceptions are caught by the LangGraph wrapper; the trace records the failure,`state.degraded` is set, confidence drops, and the pipeline continues. TC011 exercises this end-to-end.                                    |
+| **Explainability**                            | Every node writes a structured `TraceStep`. The synthesizer assembles a causal `DecisionExplanationTree` from the findings, contradictions, and signals — rendered as a clickable tree in the UI.                                        |
+| **Confidence is not a vibe**                  | Computed by a formal weighted formula in[`backend/app/domain/services/confidence.py`](backend/app/domain/services/confidence.py): `Σ wᵢ · Cᵢ − α · contradictions − β · degraded`, with weights loaded from `policy_rules.json`. |
+| **Side effects are decoupled**                | Agents publish `DomainEvent`s onto a `ClaimState` buffer; the HTTP layer drains them into an `InMemoryEventBus` after each run. Built-in subscribers: structured logging and a notification stub.                                       |
 
 ---
 
@@ -79,12 +63,12 @@ Gemini for real document upload with a single environment variable.
 docker compose up --build
 ```
 
-| Service | URL |
-| --- | --- |
-| Frontend | http://localhost:3000 |
-| API root | http://localhost:8000 |
-| Interactive API docs (Swagger) | http://localhost:8000/docs |
-| Health probe | http://localhost:8000/health |
+| Service                        | URL                          |
+| ------------------------------ | ---------------------------- |
+| Frontend                       | http://localhost:3000        |
+| API root                       | http://localhost:8000        |
+| Interactive API docs (Swagger) | http://localhost:8000/docs   |
+| Health probe                   | http://localhost:8000/health |
 
 The default `LLM_PROVIDER=mock` makes the whole stack deterministic and
 offline — perfect for the eval suite and integration tests. To run the
@@ -156,18 +140,18 @@ Solid arrows are unconditional. The two bracketed nodes are
 evidence that the pipeline should look again. Each is hard-capped at
 one iteration.
 
-| Step | Critical? | Calls LLM? | Responsibility |
-| --- | :-: | :-: | --- |
-| `intake` | yes | no | Member + policy validation, date sanity, early stop on invalid claims. |
-| `document_verification` | yes | no | Required document types, readability, patient-name match. Early stop on TC001–TC003. |
-| `extraction` | no | yes | Structured `ExtractedDocument` per upload, with confidence and validation issues. |
-| `re_verification` (deliberation) | no | yes* | Retries extraction on low-confidence / flagged docs with feedback. *(1× cap)* |
-| `contradiction_detection` | no | no | Cross-document checks: names, dates, hospitals, amounts, diagnosis ↔ treatment. |
-| `policy_adjudication` | no | no | Evaluates the JSON rule engine: coverage, exclusions, waiting periods, pre-auth. |
-| `financial_calculation` | no | no | Six-step ledger to compute approved amount and breakdown. |
-| `fraud_detection` | no | no | Same-day claims, monthly volume, high-value signals. |
-| `policy_reconsider` (deliberation) | no | no | Recommends manual review when fraud disagrees with a clean policy pass. *(1× cap)* |
-| `decision_synthesizer` | yes | no | Picks the final status, primary reason, confidence, explanation tree, cost rollup. |
+| Step                                 | Critical? | Calls LLM? | Responsibility                                                                        |
+| ------------------------------------ | :-------: | :--------: | ------------------------------------------------------------------------------------- |
+| `intake`                           |    yes    |     no     | Member + policy validation, date sanity, early stop on invalid claims.                |
+| `document_verification`            |    yes    |     no     | Required document types, readability, patient-name match. Early stop on TC001–TC003. |
+| `extraction`                       |    no    |    yes    | Structured `ExtractedDocument` per upload, with confidence and validation issues.   |
+| `re_verification` (deliberation)   |    no    |    yes*    | Retries extraction on low-confidence / flagged docs with feedback.*(1× cap)*       |
+| `contradiction_detection`          |    no    |     no     | Cross-document checks: names, dates, hospitals, amounts, diagnosis ↔ treatment.      |
+| `policy_adjudication`              |    no    |     no     | Evaluates the JSON rule engine: coverage, exclusions, waiting periods, pre-auth.      |
+| `financial_calculation`            |    no    |     no     | Six-step ledger to compute approved amount and breakdown.                             |
+| `fraud_detection`                  |    no    |     no     | Same-day claims, monthly volume, high-value signals.                                  |
+| `policy_reconsider` (deliberation) |    no    |     no     | Recommends manual review when fraud disagrees with a clean policy pass.*(1× cap)*  |
+| `decision_synthesizer`             |    yes    |     no     | Picks the final status, primary reason, confidence, explanation tree, cost rollup.    |
 
 For per-agent inputs/outputs, events, and failure modes, see
 [`AGENTS.md`](AGENTS.md).
@@ -219,16 +203,16 @@ trade-offs considered and rejected, see
 
 ## HTTP API
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/claims` | Submit a claim; runs the full pipeline. Returns claim id + complete `ClaimState`. |
-| `GET` | `/api/claims` | List recent claims (summary view). |
-| `GET` | `/api/claims/{claim_id}` | Fetch a previously processed claim. |
+| Method   | Path                            | Purpose                                                                                                                                                                     |
+| -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/api/claims`                 | Submit a claim; runs the full pipeline. Returns claim id + complete `ClaimState`.                                                                                         |
+| `GET`  | `/api/claims`                 | List recent claims (summary view).                                                                                                                                          |
+| `GET`  | `/api/claims/{claim_id}`      | Fetch a previously processed claim.                                                                                                                                         |
 | `POST` | `/api/claims/extract-preview` | Run only the extraction step on an uploaded document so the `/submit` form can auto-fill fields. Provider failures return `{ok: false, reason, message}` with HTTP 200. |
-| `GET` | `/api/members` | Member roster from `policy_terms.json` (powers the UI dropdown). |
-| `GET` | `/api/policy` | Policy metadata: categories, document requirements, network hospitals, fraud thresholds. |
-| `GET` | `/api/eval/run` | Run all 12 fixtures through the live pipeline and return per-case results. |
-| `GET` | `/health` | Liveness probe; also reports the active LLM provider. |
+| `GET`  | `/api/members`                | Member roster from `policy_terms.json` (powers the UI dropdown).                                                                                                          |
+| `GET`  | `/api/policy`                 | Policy metadata: categories, document requirements, network hospitals, fraud thresholds.                                                                                    |
+| `GET`  | `/api/eval/run`               | Run all 12 fixtures through the live pipeline and return per-case results.                                                                                                  |
+| `GET`  | `/health`                     | Liveness probe; also reports the active LLM provider.                                                                                                                       |
 
 Full request/response shapes are in
 [`docs/COMPONENT_CONTRACTS.md`](docs/COMPONENT_CONTRACTS.md).
@@ -240,19 +224,19 @@ Full request/response shapes are in
 Configuration is loaded by `pydantic-settings` from process env or
 `backend/.env`. See [`backend/.env.example`](backend/.env.example).
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `LLM_PROVIDER` | `mock` | `mock` or `gemini`. |
-| `GEMINI_API_KEY` | — | Required when `LLM_PROVIDER=gemini`. If unset, the factory silently falls back to `mock`. |
-| `GEMINI_MODEL` | `gemini-2.0-flash-exp` | Override the Gemini model id. |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./claims.db` | Any SQLAlchemy async URL (use Postgres in prod). |
-| `POLICY_TERMS_PATH` | repo `policy_terms.json` | Override the policy file. |
-| `POLICY_RULES_PATH` | repo `policy_rules.json` | Override the declarative rules + confidence weights. |
-| `TEST_CASES_PATH` | repo `test_cases.json` | Override the eval fixture set. |
-| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated origin list. |
-| `LOG_LEVEL` | `INFO` | Backend log level. |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | (Frontend) Backend base URL at build time. |
-| `NEXT_PUBLIC_DEV_MODE` | `true` | (Frontend) Hides the `/submit` failure-simulation toggle and `/eval` page when set to `false` for production builds. |
+| Variable                 | Default                             | Purpose                                                                                                                    |
+| ------------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_PROVIDER`         | `mock`                            | `mock` or `gemini`.                                                                                                    |
+| `GEMINI_API_KEY`       | —                                  | Required when `LLM_PROVIDER=gemini`. If unset, the factory silently falls back to `mock`.                              |
+| `GEMINI_MODEL`         | `gemini-2.0-flash-exp`            | Override the Gemini model id.                                                                                              |
+| `DATABASE_URL`         | `sqlite+aiosqlite:///./claims.db` | Any SQLAlchemy async URL (use Postgres in prod).                                                                           |
+| `POLICY_TERMS_PATH`    | repo `policy_terms.json`          | Override the policy file.                                                                                                  |
+| `POLICY_RULES_PATH`    | repo `policy_rules.json`          | Override the declarative rules + confidence weights.                                                                       |
+| `TEST_CASES_PATH`      | repo `test_cases.json`            | Override the eval fixture set.                                                                                             |
+| `CORS_ORIGINS`         | `http://localhost:3000`           | Comma-separated origin list.                                                                                               |
+| `LOG_LEVEL`            | `INFO`                            | Backend log level.                                                                                                         |
+| `NEXT_PUBLIC_API_URL`  | `http://localhost:8000`           | (Frontend) Backend base URL at build time.                                                                                 |
+| `NEXT_PUBLIC_DEV_MODE` | `true`                            | (Frontend) Hides the `/submit` failure-simulation toggle and `/eval` page when set to `false` for production builds. |
 
 ---
 
@@ -327,14 +311,14 @@ multi_agent_claims_pipeline/
 
 ## Documentation index
 
-| Document | What's in it |
-| --- | --- |
-| [`assignment.md`](assignment.md) | The original Plum problem statement and evaluation criteria. |
-| [`AGENTS.md`](AGENTS.md) | Every agent's name, criticality, reads/writes, events, failure mode. The deliberation cycles. The LLM provider port. The event bus. |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layering, dependency rules, composition root, deliberation rationale, alternatives considered. |
-| [`docs/COMPONENT_CONTRACTS.md`](docs/COMPONENT_CONTRACTS.md) | Per-component input/output/error contracts (precise enough to reimplement any single component without reading its code). |
-| [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md) | Auto-generated. Per-case decision, expected vs actual, full trace, aggregates. |
-| [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | 8–12 minute demo walkthrough used for the technical review. |
+| Document                                                    | What's in it                                                                                                                        |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| [`assignment.md`](assignment.md)                             | The original Plum problem statement and evaluation criteria.                                                                        |
+| [`AGENTS.md`](AGENTS.md)                                     | Every agent's name, criticality, reads/writes, events, failure mode. The deliberation cycles. The LLM provider port. The event bus. |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)               | Layering, dependency rules, composition root, deliberation rationale, alternatives considered.                                      |
+| [`docs/COMPONENT_CONTRACTS.md`](docs/COMPONENT_CONTRACTS.md) | Per-component input/output/error contracts (precise enough to reimplement any single component without reading its code).           |
+| [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md)                 | Auto-generated. Per-case decision, expected vs actual, full trace, aggregates.                                                      |
+| [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)                 | 8–12 minute demo walkthrough used for the technical review.                                                                        |
 
 ---
 
@@ -374,4 +358,3 @@ Honest list, in case the reviewer is curious where to push next:
 - **Deliberation caps are conservative.** Both cycles are hard-capped at
   one iteration to bound latency and cost. A production deployment
   could let the budget be policy-driven.
-
