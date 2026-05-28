@@ -44,6 +44,37 @@ HARD_REJECT_CODES: set[str] = {
     RejectionReason.BELOW_MIN_CLAIM.value,
 }
 
+# Order in which a hard-rejection finding gets to drive the *user-facing*
+# message when multiple hard-rejection rules fire on the same claim.
+#
+# The principle: the message should tell the member what to do next. A
+# permanent exclusion (e.g. cosmetic surgery, bariatric) is absolute —
+# leading with "you can resubmit in 365 days" (a waiting-period message)
+# would mislead the member into resubmitting a claim that can never be
+# approved under this policy. So exclusions outrank waiting periods.
+# Within actionable failures, we prefer the most specific instruction:
+# prescription missing > pre-auth missing > per-claim exceeded.
+#
+# All hard-rejection codes still appear in ``Decision.rejection_reasons``;
+# this ordering only affects which one writes the primary user message
+# and decision summary.
+_PRIMARY_REJECTION_PRIORITY: list[str] = [
+    RejectionReason.EXCLUDED_CONDITION.value,
+    RejectionReason.PRESCRIPTION_MISSING.value,
+    RejectionReason.PRE_AUTH_MISSING.value,
+    RejectionReason.PER_CLAIM_EXCEEDED.value,
+    RejectionReason.WAITING_PERIOD.value,
+    RejectionReason.SUBMISSION_DEADLINE.value,
+    RejectionReason.BELOW_MIN_CLAIM.value,
+]
+
+
+def _primary_rejection(findings: list[PolicyFinding]) -> PolicyFinding:
+    """Pick the finding that drives the user message from the list of hard
+    rejections in priority order. Caller guarantees ``findings`` is non-empty."""
+    rank = {code: i for i, code in enumerate(_PRIMARY_REJECTION_PRIORITY)}
+    return min(findings, key=lambda f: rank.get(f.code, len(rank)))
+
 
 class DecisionSynthesizerAgent(BaseAgent):
     name = "decision_synthesizer"
@@ -78,15 +109,24 @@ class DecisionSynthesizerAgent(BaseAgent):
             state.confidence = round(confidence, 4)
 
             if has_coverage_failure or hard_rejections:
-                rejections = [
-                    self._to_rejection_code(f.code) for f in hard_rejections
-                ]
+                # Promote the priority winner to the head of the list so
+                # the API response surfaces the most actionable code first
+                # while preserving the full set for audit.
+                if hard_rejections:
+                    primary_reason = _primary_rejection(hard_rejections)
+                    ordered = [primary_reason] + [
+                        f for f in hard_rejections if f is not primary_reason
+                    ]
+                else:
+                    primary_reason = _coverage_finding(state)
+                    ordered = []
+
+                rejections = [self._to_rejection_code(f.code) for f in ordered]
                 if has_coverage_failure:
                     rejections = list(
                         dict.fromkeys(rejections + [RejectionReason.CATEGORY_NOT_COVERED])
                     )
 
-                primary_reason = hard_rejections[0] if hard_rejections else _coverage_finding(state)
                 user_msg = self._user_message_for_rejection(state, primary_reason, breakdown)
                 summary = primary_reason.message
                 state.decision = Decision(
@@ -97,7 +137,11 @@ class DecisionSynthesizerAgent(BaseAgent):
                     confidence=round(confidence, 3),
                     summary=summary,
                     user_message=user_msg,
-                    notes=[f.message for f in hard_rejections],
+                    # Keep the primary reason's message at the top of `notes`
+                    # so audit views and the eval report read in the same
+                    # order the user sees.
+                    notes=[primary_reason.message]
+                    + [f.message for f in ordered if f is not primary_reason],
                     breakdown=breakdown,
                     line_items=state.line_decisions,
                     degraded=state.degraded,
@@ -300,16 +344,17 @@ class DecisionSynthesizerAgent(BaseAgent):
         code = finding.code
         if code == RejectionReason.WAITING_PERIOD.value:
             ev = finding.evidence
+            # ``condition_label`` ("diabetes", "obesity-related treatment") is
+            # surfaced by the JSON rule engine when the rule carries one.
+            # ``matched_condition`` is the legacy key from waiting_periods.py;
+            # we read both for forward/back compatibility.
+            condition = ev.get("condition_label") or ev.get("matched_condition")
+            condition_clause = f" for {condition}" if condition else ""
             return (
                 f"Your claim has been rejected because the treatment date "
                 f"({state.input.treatment_date}) is within the "
-                f"{ev.get('days_required')}-day waiting period"
-                + (
-                    f" for {ev.get('matched_condition')}"
-                    if ev.get("matched_condition")
-                    else ""
-                )
-                + f". You will be eligible for this type of claim from "
+                f"{ev.get('days_required')}-day waiting period{condition_clause}. "
+                f"You will be eligible for this type of claim from "
                 f"{ev.get('eligibility_date')}. "
                 f"Please resubmit on or after that date."
             )
@@ -319,14 +364,28 @@ class DecisionSynthesizerAgent(BaseAgent):
                 f"Your claim has been rejected because the diagnosis/treatment "
                 f"('{ev.get('diagnosis') or ev.get('treatment')}') is excluded under "
                 f"this policy ('{ev.get('matched_exclusion')}'). "
-                f"Excluded conditions are not covered regardless of amount."
+                f"Excluded conditions are not covered regardless of amount or "
+                f"waiting period — please contact your HR team about alternative "
+                f"benefits if you need coverage for this."
             )
         if code == RejectionReason.PRE_AUTH_MISSING.value:
+            # Evidence keys come from the JSON rule engine:
+            #   - matched_test    set by _op_high_value_test_in_doc
+            #   - threshold       set by _op_claimed_amount_gt
+            # (the legacy keys `test_name` / `next_steps` were never emitted
+            # and showed up in the rendered message as the literal word "None")
             ev = finding.evidence
+            test = ev.get("matched_test") or "this test"
+            threshold = ev.get("threshold")
+            threshold_clause = (
+                f" above ₹{float(threshold):,.0f}" if threshold is not None else ""
+            )
             return (
-                f"Your claim has been rejected because pre-authorization was required "
-                f"for {ev.get('test_name')} above ₹{ev.get('threshold'):,.0f} but was "
-                f"not obtained. {ev.get('next_steps', '')}"
+                f"Your claim has been rejected because pre-authorization was "
+                f"required for {test}{threshold_clause} but was not obtained. "
+                f"Please contact the insurer to obtain a pre-authorization "
+                f"reference number for this test, then resubmit the claim with "
+                f"that reference attached."
             )
         if code == RejectionReason.PER_CLAIM_EXCEEDED.value:
             return (
