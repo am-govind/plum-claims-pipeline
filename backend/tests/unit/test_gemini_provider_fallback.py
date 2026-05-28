@@ -64,7 +64,7 @@ def fake_genai(monkeypatch: pytest.MonkeyPatch) -> _FakeModel:
 async def test_content_fallback_skips_llm_call(fake_genai: _FakeModel):
     from app.infrastructure.llm.gemini import GeminiProvider
 
-    provider = GeminiProvider(api_key="fake-key", model="gemini-2.0-flash-exp")
+    provider = GeminiProvider(api_key="fake-key", model="gemini-2.0-flash")
 
     doc = DocumentInput(
         file_id="F001",
@@ -99,7 +99,7 @@ async def test_empty_content_still_calls_llm(fake_genai: _FakeModel):
     raise is our assertion that the call WAS attempted."""
     from app.infrastructure.llm.gemini import GeminiProvider
 
-    provider = GeminiProvider(api_key="fake-key", model="gemini-2.0-flash-exp")
+    provider = GeminiProvider(api_key="fake-key", model="gemini-2.0-flash")
 
     doc = DocumentInput(
         file_id="F001",
