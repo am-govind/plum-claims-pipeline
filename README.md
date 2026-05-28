@@ -1,3 +1,21 @@
+---
+title: Plum Claims Pipeline Backend
+emoji: 🩺
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Multi-agent health-insurance claims processing pipeline.
+---
+
+<!--
+  The block above is consumed by Hugging Face Spaces (Docker SDK) and
+  stripped from the rendered page. It lets the same repo be pushed to a
+  Space as-is — the root Dockerfile builds the backend, app_port matches
+  the EXPOSE line. See docs/DEPLOY.md for the full deployment guide.
+-->
+
 # Plum Claims Pipeline
 
 > A multi-agent health-insurance claims processing system — every decision is auditable,

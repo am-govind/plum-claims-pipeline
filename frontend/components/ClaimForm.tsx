@@ -10,6 +10,10 @@ import {
 } from "@/lib/api";
 import { IS_DEV_MODE } from "@/lib/devMode";
 
+function normaliseName(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const DOCUMENT_TYPES = [
@@ -28,8 +32,8 @@ const QUALITIES = ["GOOD", "ACCEPTABLE", "POOR", "UNREADABLE"] as const;
 type DocumentDraft = {
   file_id: string;
   file_name: string;
-  actual_type: (typeof DOCUMENT_TYPES)[number];
-  quality: (typeof QUALITIES)[number];
+  actual_type: (typeof DOCUMENT_TYPES)[number] | "";
+  quality: (typeof QUALITIES)[number] | "";
   patient_name_on_doc: string;
   total_amount: string;
   diagnosis: string;
@@ -47,8 +51,12 @@ type DocumentDraft = {
 function emptyDoc(idx: number): DocumentDraft {
   return {
     file_id: `F${String(idx).padStart(3, "0")}`,
-    file_name: `document_${idx}.jpg`,
-    actual_type: "PRESCRIPTION",
+    file_name: "",
+    actual_type: "",
+    // Quality is a real customer wouldn't be asked to self-rate; the Gemini
+    // adapter sets this in production via the extract-preview path. Default
+    // GOOD so submissions are always valid even when the Quality select is
+    // hidden in production builds (NEXT_PUBLIC_DEV_MODE=false).
     quality: "GOOD",
     patient_name_on_doc: "",
     total_amount: "",
@@ -97,20 +105,18 @@ export function ClaimForm() {
   const router = useRouter();
   const [members, setMembers] = useState<Member[]>([]);
   const [policy, setPolicy] = useState<PolicySummary | null>(null);
+  const [policyLoading, setPolicyLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [memberId, setMemberId] = useState("EMP001");
-  const [category, setCategory] = useState("CONSULTATION");
-  const [treatmentDate, setTreatmentDate] = useState("2024-11-01");
-  const [claimedAmount, setClaimedAmount] = useState("1500");
+  const [memberName, setMemberName] = useState("");
+  const [category, setCategory] = useState("");
+  const [treatmentDate, setTreatmentDate] = useState("");
+  const [claimedAmount, setClaimedAmount] = useState("");
   const [hospitalName, setHospitalName] = useState("");
-  const [ytdAmount, setYtdAmount] = useState("0");
+  const [ytdAmount, setYtdAmount] = useState("");
   const [simulateFailure, setSimulateFailure] = useState(false);
-  const [docs, setDocs] = useState<DocumentDraft[]>([
-    emptyDoc(1),
-    emptyDoc(2),
-  ]);
+  const [docs, setDocs] = useState<DocumentDraft[]>([emptyDoc(1)]);
 
   useEffect(() => {
     Promise.all([
@@ -121,13 +127,24 @@ export function ClaimForm() {
         setMembers(m);
         setPolicy(p);
       })
-      .catch((e) => setError(`Failed to load policy data: ${e.message}`));
+      .catch((e) => setError(`Failed to load policy data: ${e.message}`))
+      .finally(() => setPolicyLoading(false));
   }, []);
 
   const requiredTypes = useMemo(() => {
     if (!policy) return [];
     return policy.document_requirements[category]?.required ?? [];
   }, [category, policy]);
+
+  // Resolve the typed name to a canonical member from the policy roster
+  // so the API contract (member_id) is unchanged. Match is case- and
+  // whitespace-insensitive; backend's MEMBER_NOT_FOUND early-stop still
+  // catches any value that slips through.
+  const resolvedMember = useMemo<Member | null>(() => {
+    const q = normaliseName(memberName);
+    if (!q) return null;
+    return members.find((m) => normaliseName(m.name) === q) ?? null;
+  }, [memberName, members]);
 
   function updateDoc(i: number, patch: Partial<DocumentDraft>) {
     setDocs((d) => d.map((doc, j) => (j === i ? { ...doc, ...patch } : doc)));
@@ -187,13 +204,17 @@ export function ClaimForm() {
             document: {
               file_id: currentDoc.file_id,
               file_name: file.name,
-              actual_type: currentDoc.actual_type,
-              quality: currentDoc.quality,
+              // The backend enum is strict. If the user uploaded before
+              // picking a type/quality, send safe defaults so extraction
+              // can run; the extracted values will then auto-fill the
+              // selects, or the user can pick them manually.
+              actual_type: currentDoc.actual_type || "UNKNOWN",
+              quality: currentDoc.quality || "GOOD",
               patient_name_on_doc: currentDoc.patient_name_on_doc || undefined,
               bytes_b64,
               mime_type,
             },
-            hint_category: category,
+            hint_category: category || undefined,
           }),
         }
       );
@@ -241,6 +262,13 @@ export function ClaimForm() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    if (!resolvedMember) {
+      setError(
+        `We couldn't find a member named "${memberName.trim()}" in the policy roster. Please check the spelling.`
+      );
+      setSubmitting(false);
+      return;
+    }
     try {
       // We deliberately do NOT send `bytes_b64`/`mime_type` here. Those were
       // already extracted via /api/claims/extract-preview (or supplied as
@@ -263,7 +291,7 @@ export function ClaimForm() {
         },
       }));
       const payload = {
-        member_id: memberId,
+        member_id: resolvedMember.member_id,
         policy_id: policy?.policy_id ?? "PLUM_GHI_2024",
         claim_category: category,
         treatment_date: treatmentDate,
@@ -295,27 +323,54 @@ export function ClaimForm() {
         </div>
       ) : null}
 
+      {/*
+        First-paint loader. The backend may be a sleeping Hugging Face
+        Space on prod — first request can take 30-60s to wake. Without
+        this notice, the Member field looks broken (empty placeholder,
+        no feedback). Hidden once /api/members + /api/policy resolve.
+      */}
+      {policyLoading && !error ? (
+        <div className="rounded-lg border border-ink-200 bg-ink-50 p-3 text-sm text-ink-600">
+          Loading policy data… (this can take up to a minute on first
+          visit while the backend wakes from sleep)
+        </div>
+      ) : null}
+
       <section className="grid gap-6 rounded-2xl border border-ink-200 bg-white p-6 md:grid-cols-2">
-        <Field label="Member">
-          <select
-            value={memberId}
-            onChange={(e) => setMemberId(e.target.value)}
+        <Field label="Member name">
+          <input
+            type="text"
+            value={memberName}
+            onChange={(e) => setMemberName(e.target.value)}
             className="input"
-          >
-            {members.map((m) => (
-              <option key={m.member_id} value={m.member_id}>
-                {m.member_id} — {m.name} ({m.relationship})
-              </option>
-            ))}
-          </select>
+            placeholder="e.g. Rajesh Kumar"
+            autoComplete="off"
+            required
+          />
+          {memberName.trim() ? (
+            resolvedMember ? (
+              <p className="mt-1 text-xs text-emerald-700">
+                Matched {resolvedMember.member_id} (
+                {resolvedMember.relationship.toLowerCase()})
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-amber-700">
+                Not found in the policy roster — check the spelling.
+              </p>
+            )
+          ) : null}
         </Field>
         <Field label="Claim category">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className="input"
+            required
           >
-            {(policy?.categories ?? ["consultation"]).map((c) => (
+            <option value="" disabled>
+              Select a category
+            </option>
+            {(policy?.categories ?? []).map((c) => (
               <option key={c} value={c.toUpperCase()}>
                 {c}
               </option>
@@ -328,6 +383,7 @@ export function ClaimForm() {
             value={treatmentDate}
             onChange={(e) => setTreatmentDate(e.target.value)}
             className="input"
+            required
           />
         </Field>
         <Field label="Claimed amount (INR)">
@@ -338,6 +394,7 @@ export function ClaimForm() {
             className="input"
             min={0}
             step="0.01"
+            placeholder="e.g. 1500"
             required
           />
         </Field>
@@ -358,6 +415,7 @@ export function ClaimForm() {
             className="input"
             min={0}
             step="0.01"
+            placeholder="0"
           />
         </Field>
         {IS_DEV_MODE ? (
@@ -465,6 +523,7 @@ export function ClaimForm() {
                       updateDoc(i, { file_name: e.target.value })
                     }
                     className="input"
+                    placeholder="e.g. prescription.jpg"
                   />
                 </Field>
                 <Field label="Document type">
@@ -477,7 +536,11 @@ export function ClaimForm() {
                       })
                     }
                     className="input"
+                    required
                   >
+                    <option value="" disabled>
+                      Select a type
+                    </option>
                     {DOCUMENT_TYPES.map((t) => (
                       <option key={t} value={t}>
                         {t}
@@ -485,23 +548,38 @@ export function ClaimForm() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Quality">
-                  <select
-                    value={d.quality}
-                    onChange={(e) =>
-                      updateDoc(i, {
-                        quality: e.target.value as DocumentDraft["quality"],
-                      })
-                    }
-                    className="input"
-                  >
-                    {QUALITIES.map((q) => (
-                      <option key={q} value={q}>
-                        {q}
+                {/*
+                  Quality is a backend-side legibility tag that in production
+                  is set by the extraction adapter (Gemini/mock), not the
+                  member. Exposed in dev mode only so TC002 (UNREADABLE →
+                  DOCUMENT_UNREADABLE early-stop) stays demoable. In
+                  production builds (NEXT_PUBLIC_DEV_MODE=false) the field
+                  is hidden and the GOOD default from emptyDoc() flows
+                  through to the backend.
+                */}
+                {IS_DEV_MODE ? (
+                  <Field label="Quality (dev only)">
+                    <select
+                      value={d.quality}
+                      onChange={(e) =>
+                        updateDoc(i, {
+                          quality: e.target.value as DocumentDraft["quality"],
+                        })
+                      }
+                      className="input"
+                      required
+                    >
+                      <option value="" disabled>
+                        Select quality
                       </option>
-                    ))}
-                  </select>
-                </Field>
+                      {QUALITIES.map((q) => (
+                        <option key={q} value={q}>
+                          {q}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : null}
                 <Field label="Patient name on document">
                   <input
                     type="text"
@@ -573,10 +651,14 @@ export function ClaimForm() {
       <div className="flex justify-end">
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || policyLoading}
           className="btn-primary disabled:opacity-50"
         >
-          {submitting ? "Processing…" : "Submit claim"}
+          {submitting
+            ? "Processing…"
+            : policyLoading
+              ? "Loading policy…"
+              : "Submit claim"}
         </button>
       </div>
 

@@ -39,6 +39,14 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO")
     cors_origins: str = Field(default="http://localhost:3000")
+    cors_origin_regex: str | None = Field(
+        default=None,
+        description=(
+            "Optional regex allowed by CORSMiddleware.allow_origin_regex. "
+            "Useful for Vercel preview URLs, e.g. "
+            "r'^https://your-app(-[a-z0-9-]+)?\\.vercel\\.app$'."
+        ),
+    )
 
     @property
     def cors_origins_list(self) -> list[str]:

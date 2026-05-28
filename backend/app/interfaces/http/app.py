@@ -43,13 +43,18 @@ def create_app() -> FastAPI:
         description="Multi-agent health insurance claims processing pipeline.",
         lifespan=lifespan,
     )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # `allow_origin_regex` is opt-in via the CORS_ORIGIN_REGEX env var so we
+    # can let Vercel preview URLs (`my-app-git-branch-xyz.vercel.app`) through
+    # without enumerating every one. The exact-match list still applies.
+    cors_kwargs: dict[str, object] = {
+        "allow_origins": settings.cors_origins_list,
+        "allow_credentials": True,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+    }
+    if settings.cors_origin_regex:
+        cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
+    app.add_middleware(CORSMiddleware, **cors_kwargs)
     app.include_router(claims_router)
     app.include_router(extraction_router)
     app.include_router(members_router)
