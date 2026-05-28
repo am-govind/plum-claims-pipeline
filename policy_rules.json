@@ -29,6 +29,7 @@
       "rule_id": "WAITING_PERIOD_DIABETES",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "diabetes",
       "condition": {
         "all": [
           {"matches_diagnosis": ["diabetes", "t2dm", "type 2 diabetes", "diabetic"]},
@@ -37,13 +38,14 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day diabetes waiting period. Member becomes eligible from ${eligibility_date}.",
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}.",
       "pass_template": "No diabetes waiting period violated"
     },
     {
       "rule_id": "WAITING_PERIOD_HYPERTENSION",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "hypertension",
       "condition": {
         "all": [
           {"matches_diagnosis": ["hypertension", "htn", "high blood pressure"]},
@@ -52,12 +54,13 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day hypertension waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "WAITING_PERIOD_THYROID",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "thyroid disorders",
       "condition": {
         "all": [
           {"matches_diagnosis": ["thyroid", "hypothyroid", "hyperthyroid"]},
@@ -66,12 +69,13 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day thyroid disorders waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "WAITING_PERIOD_JOINT_REPLACEMENT",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "joint replacement",
       "condition": {
         "all": [
           {"matches_diagnosis": ["joint replacement", "knee replacement", "hip replacement"]},
@@ -80,12 +84,13 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day joint-replacement waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "WAITING_PERIOD_MATERNITY",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "maternity",
       "condition": {
         "all": [
           {"matches_diagnosis": ["maternity", "pregnancy", "delivery", "antenatal"]},
@@ -94,12 +99,13 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day maternity waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "WAITING_PERIOD_MENTAL_HEALTH",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "mental health",
       "condition": {
         "all": [
           {"matches_diagnosis": ["mental health", "depression", "anxiety", "psychiatric"]},
@@ -108,12 +114,13 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day mental-health waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "WAITING_PERIOD_OBESITY",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "obesity-related treatment",
       "condition": {
         "all": [
           {"matches_diagnosis": ["obesity", "bariatric", "weight loss"]},
@@ -122,12 +129,13 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day obesity-treatment waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "WAITING_PERIOD_HERNIA",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "hernia",
       "condition": {
         "all": [
           {"matches_diagnosis": ["hernia"]},
@@ -136,12 +144,13 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day hernia waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "WAITING_PERIOD_CATARACT",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "cataract surgery",
       "condition": {
         "all": [
           {"matches_diagnosis": ["cataract"]},
@@ -150,12 +159,13 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day cataract waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day waiting period for ${condition_label}. Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "WAITING_PERIOD_INITIAL",
       "code": "WAITING_PERIOD",
       "category_scope": ["*"],
+      "condition_label": "initial coverage activation",
       "condition": {
         "all": [
           {"days_since_join_lt": "${policy.waiting_periods.initial_waiting_period_days}"}
@@ -163,7 +173,7 @@
       },
       "action": "REJECT",
       "severity": "REJECT",
-      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day initial waiting period. Member becomes eligible from ${eligibility_date}."
+      "reason_template": "Treatment date ${treatment_date} is within the ${days_required}-day initial waiting period (${condition_label}). Member becomes eligible from ${eligibility_date}."
     },
     {
       "rule_id": "EXCLUDED_CONDITION",
