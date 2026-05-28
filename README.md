@@ -1,5 +1,3 @@
-
-
 # Plum Claims Pipeline
 
 > A multi-agent health-insurance claims processing system — every decision is auditable,
@@ -189,7 +187,7 @@ The LLM is just another port. Two adapters live behind it:
 - **`MockProvider`** — deterministic, reads pre-extracted `content` from
   the test fixture. Default; used by the eval suite and all integration
   tests so the run is offline and reproducible.
-- **`GeminiProvider`** — vision-capable, calls Google `gemini-2.0-flash-exp`
+- **`GeminiProvider`** — vision-capable, calls Google `gemini-2.0-flash`
   over `bytes_b64` from real uploads. Honours the *one Gemini call per
   uploaded document* invariant by short-circuiting when the
   `extract-preview` endpoint already produced an extraction in the
@@ -228,7 +226,7 @@ Configuration is loaded by `pydantic-settings` from process env or
 | ------------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `LLM_PROVIDER`         | `mock`                            | `mock` or `gemini`.                                                                                                    |
 | `GEMINI_API_KEY`       | —                                  | Required when `LLM_PROVIDER=gemini`. If unset, the factory silently falls back to `mock`.                              |
-| `GEMINI_MODEL`         | `gemini-2.0-flash-exp`            | Override the Gemini model id.                                                                                              |
+| `GEMINI_MODEL`         | `gemini-2.0-flash`                | Override the Gemini model id.                                                                                              |
 | `DATABASE_URL`         | `sqlite+aiosqlite:///./claims.db` | Any SQLAlchemy async URL (use Postgres in prod).                                                                           |
 | `POLICY_TERMS_PATH`    | repo `policy_terms.json`          | Override the policy file.                                                                                                  |
 | `POLICY_RULES_PATH`    | repo `policy_rules.json`          | Override the declarative rules + confidence weights.                                                                       |

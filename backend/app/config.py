@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str | None = Field(default=None)
     llm_provider: str = Field(default="mock", description="'mock' or 'gemini'")
-    gemini_model: str = Field(default="gemini-2.0-flash-exp")
+    gemini_model: str = Field(default="gemini-2.0-flash")
 
     database_url: str = Field(default="sqlite+aiosqlite:///./claims.db")
 

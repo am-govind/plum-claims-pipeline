@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 # enough to mislead a reviewer. Real ops would read these from a config
 # table and version them.
 MODEL_PRICING_USD_PER_M_TOKENS: dict[str, tuple[float, float]] = {
-    "gemini-2.0-flash-exp": (0.10, 0.40),
+    "gemini-2.0-flash": (0.10, 0.40),
     "gemini-1.5-pro": (1.25, 5.00),
     "gemini-1.5-flash": (0.075, 0.30),
     "mock": (0.0, 0.0),
