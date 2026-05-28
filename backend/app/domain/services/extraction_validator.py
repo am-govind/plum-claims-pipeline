@@ -78,14 +78,18 @@ def validate_extraction(doc: ExtractedDocument) -> list[str]:
         if li.amount < 0:
             issues.append(f"line item '{li.description}' has negative amount {li.amount}")
 
-    # 5. patient_name presence on documents that always have one
+    # 5. patient_name presence — only hard-flag on document types where
+    # the field is a clinically-anchoring signal (prescription, lab report,
+    # diagnostic report). Real-world hospital bills and pharmacy bills
+    # often print the patient name only on a header that doesn't survive
+    # OCR cleanly; missing it there is not enough to drop confidence or
+    # trigger a re-extraction cycle. The cross-document patient mismatch
+    # check in `DocumentVerificationAgent` already catches the cases that
+    # actually matter (TC003).
     needs_patient = {
         DocumentType.PRESCRIPTION,
-        DocumentType.HOSPITAL_BILL,
         DocumentType.LAB_REPORT,
         DocumentType.DIAGNOSTIC_REPORT,
-        DocumentType.PHARMACY_BILL,
-        DocumentType.DISCHARGE_SUMMARY,
     }
     if doc.document_type in needs_patient and not doc.patient_name:
         issues.append(

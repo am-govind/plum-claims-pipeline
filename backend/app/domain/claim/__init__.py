@@ -11,7 +11,7 @@ from datetime import date as DateType
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ClaimCategory(str, Enum):
@@ -46,6 +46,12 @@ class LineItem(BaseModel):
     amount: float
 
 
+MAX_BYTES_B64_LEN = 14_000_000
+"""Roughly 10 MB of decoded payload (base64 inflates by ~33%). Bigger than
+any real phone photo, small enough that a runaway upload can't OOM the
+extraction provider before it even reaches Gemini."""
+
+
 class DocumentInput(BaseModel):
     """A document as submitted by the member or a test fixture.
 
@@ -65,6 +71,16 @@ class DocumentInput(BaseModel):
     content: dict[str, Any] | None = None
     bytes_b64: str | None = None
     mime_type: str | None = None
+
+    @field_validator("bytes_b64")
+    @classmethod
+    def _bytes_b64_within_limit(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > MAX_BYTES_B64_LEN:
+            raise ValueError(
+                f"bytes_b64 too large: {len(v)} chars (max {MAX_BYTES_B64_LEN}, "
+                "~10 MB decoded). Compress the image client-side or split the PDF."
+            )
+        return v
 
 
 class ExtractedDocument(BaseModel):

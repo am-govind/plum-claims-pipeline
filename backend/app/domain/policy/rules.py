@@ -95,6 +95,16 @@ class DslRuleEngine:
                     "claimed_amount": f"{state.input.claimed_amount:,.0f}",
                 }
             )
+            # Optional rule-level metadata that operators don't compute but
+            # that the synthesizer (and reason templates) want for messaging.
+            # ``condition_label`` lets waiting-period rules name the condition
+            # ("diabetes", "obesity-treatment") in the user-facing message;
+            # we surface it on both evidence and template_vars so reason
+            # templates can ${condition_label} it directly.
+            condition_label = rule.get("condition_label")
+            if condition_label:
+                ctx.evidence["condition_label"] = condition_label
+                ctx.template_vars["condition_label"] = condition_label
             try:
                 triggered = _eval_node(rule.get("condition", {}), ctx)
             except Exception as exc:  # pragma: no cover — defensive
@@ -423,8 +433,16 @@ def _make_result(rule: dict[str, Any], ctx: _Ctx, triggered: bool) -> RuleResult
     else:
         template = rule.get("pass_template", f"Rule {rule['rule_id']} passed")
 
+    # template_vars wins over evidence on key collision so the formatted
+    # display values (e.g. claimed_amount = "1,500") are preferred over the
+    # raw numeric copies the operators stash on evidence for the trace.
+    # Merging into one dict avoids the `safe_substitute(**a, **b)`
+    # TypeError-on-duplicate-keyword that used to silently fall through to
+    # the bare `except Exception` and leave the raw `${...}` placeholders
+    # in the rendered message.
+    subs: dict[str, Any] = {**ctx.evidence, **ctx.template_vars}
     try:
-        message = Template(template).safe_substitute(**ctx.template_vars, **ctx.evidence)
+        message = Template(template).safe_substitute(subs)
     except Exception:
         message = template
 
