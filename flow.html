@@ -3,271 +3,340 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Claims Pipeline — Sequence Diagram</title>
+  <title>Plum Claims Pipeline — Hexagonal / DDD Architecture</title>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <style>
     :root {
-      --ink: #111827;
-      --muted: #6b7280;
-      --accent: #2563eb;
-      --bg: #ffffff;
+      --ink: #111827; --ink-2: #1f2937; --muted: #6b7280; --muted-2: #9ca3af;
+      --line: #e5e7eb; --line-2: #d1d5db; --bg: #ffffff; --bg-2: #f9fafb;
+      --accent: #2563eb; --accent-soft: #eef2ff; --good: #10b981;
+      --warn: #f59e0b; --hot: #ef4444; --code-bg: #f3f4f6;
     }
     * { box-sizing: border-box; }
     html, body {
-      margin: 0;
-      padding: 0;
-      background: var(--bg);
-      color: var(--ink);
+      margin: 0; padding: 0; background: var(--bg); color: var(--ink);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      font-size: 14px;
-      line-height: 1.55;
-      -webkit-font-smoothing: antialiased;
+      font-size: 14.5px; line-height: 1.6; -webkit-font-smoothing: antialiased;
     }
-    .page {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 32px 24px 64px;
-    }
-    header {
-      border-bottom: 1px solid #e5e7eb;
-      padding-bottom: 20px;
-      margin-bottom: 28px;
-    }
-    h1 {
-      margin: 0 0 6px;
-      font-size: 22px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-    .subtitle {
-      color: var(--muted);
-      font-size: 13px;
-    }
-    .legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 14px;
-      margin: 14px 0 0;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .legend span {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      display: inline-block;
-    }
-    .diagram {
-      background: #ffffff;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 24px;
-      overflow-x: auto;
-    }
-    .mermaid {
-      background: #ffffff !important;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    footer {
-      margin-top: 24px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      background: #f3f4f6;
-      padding: 1px 5px;
-      border-radius: 3px;
-    }
+    .page { max-width: 1280px; margin: 0 auto; padding: 40px 28px 80px; }
+    header.top { border-bottom: 1px solid var(--line); padding-bottom: 22px; margin-bottom: 28px; }
+    .eyebrow { color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+    h1 { margin: 0 0 8px; font-size: 26px; font-weight: 600; letter-spacing: -0.015em; }
+    h2 { margin: 40px 0 12px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: baseline; gap: 12px; }
+    h2 .num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    h3 { margin: 24px 0 8px; font-size: 15px; font-weight: 600; }
+    p, li { color: var(--ink-2); }
+    .subtitle { color: var(--muted); font-size: 14px; max-width: 880px; }
+    .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; }
+    .toc a { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink-2); text-decoration: none; font-size: 12.5px; }
+    .toc a:hover { background: var(--bg-2); border-color: var(--line-2); }
+    .toc a .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+    section { margin-top: 8px; }
+    .lead { color: var(--ink-2); max-width: 880px; margin: 0 0 18px; }
+    .diagram { background: #ffffff; border: 1px solid var(--line); border-radius: 10px; padding: 24px; overflow-x: auto; }
+    .diagram + .note { margin-top: 12px; }
+    .mermaid { background: #ffffff !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .note { background: var(--bg-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 10px 14px; font-size: 13px; color: var(--ink-2); }
+    table.ports { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13.5px; }
+    table.ports th, table.ports td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.ports th { background: var(--bg-2); font-weight: 600; color: var(--ink); border-top: 1px solid var(--line); }
+    table.ports tr:hover td { background: var(--bg-2); }
+    table.ports code { font-size: 12.5px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12.5px; background: var(--code-bg); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
+    pre.tree { background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12.5px; line-height: 1.65; color: var(--ink); }
+    pre.tree .c { color: var(--muted); }
+    ul.payoffs { padding-left: 0; list-style: none; margin: 8px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 760px) { ul.payoffs { grid-template-columns: 1fr; } }
+    ul.payoffs li { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: #ffffff; }
+    ul.payoffs li b { display: block; margin-bottom: 4px; color: var(--ink); font-size: 14.5px; }
+    ul.payoffs li span { color: var(--ink-2); font-size: 13.5px; }
+    footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   </style>
 </head>
 <body>
   <div class="page">
-    <header>
-      <h1>Multi-Agent Claims Pipeline — Request Sequence</h1>
-      <div class="subtitle">
-        End-to-end flow from <code>POST /api/claims</code> through the LangGraph orchestrator, the SqlAlchemy <code>ClaimRepository</code>, and the in-memory <code>EventBus</code>. Dependencies are constructed once at the composition root (<code>backend/app/composition.py</code>) and injected via FastAPI <code>Depends()</code>.
-      </div>
-      <div class="legend">
-        <span><span class="dot"></span> alt blocks = conditional paths</span>
-        <span><span class="dot" style="background:#10b981"></span> par block = concurrent per-document extraction</span>
-        <span><span class="dot" style="background:#a855f7"></span> domain events recorded on state, dispatched after save</span>
-        <span><span class="dot" style="background:#f59e0b"></span> dashed return = response back to caller</span>
-      </div>
+    <header class="top">
+      <div class="eyebrow">Plum Claims Pipeline</div>
+      <h1>Hexagonal / DDD Architecture</h1>
+      <p class="subtitle">
+        One picture per concern. Read top to bottom: <b>shape</b> &rarr; <b>wiring</b> &rarr; <b>flow</b> &rarr; <b>folders</b>.
+        All diagrams reflect the production code in <code>backend/app/</code>; nothing here is aspirational.
+      </p>
+      <nav class="toc">
+        <a href="#shape"><span class="n">1</span> Shape</a>
+        <a href="#ports"><span class="n">2</span> Ports &amp; Adapters</a>
+        <a href="#composition"><span class="n">3</span> Composition root</a>
+        <a href="#pipeline"><span class="n">4</span> Pipeline</a>
+        <a href="#lifecycle"><span class="n">5</span> Request lifecycle</a>
+        <a href="#layout"><span class="n">6</span> Folder layout</a>
+        <a href="#payoff"><span class="n">7</span> What this buys you</a>
+      </nav>
     </header>
 
-    <div class="diagram">
-      <pre class="mermaid">
+    <section id="shape">
+      <h2><span class="num">1</span> The shape (Hexagonal layers)</h2>
+      <p class="lead">
+        The system is organised into four layers. <b>Dependencies point inward</b>:
+        <code>interfaces</code> talks to <code>application</code> talks to <code>domain</code>.
+        <code>infrastructure</code> sits on the outside and <em>implements</em> the abstract
+        <code>ports</code> the application defines.
+      </p>
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  subgraph IF["interfaces (HTTP / CLI)"]
+    IF1["FastAPI routers<br/>claims · members · eval · extraction"]
+    IF2["eval.runner CLI"]
+  end
+  subgraph CR["composition root"]
+    CRX["app/composition.py<br/><b>Container · compose()</b>"]
+  end
+  subgraph APP["application"]
+    APP1["pipeline.py<br/>build_pipeline / run_pipeline"]
+    APP2["agents/*<br/>Intake · Extraction · …"]
+    APP3["ports/<br/>ClaimRepository · PolicyRepository<br/>RuleEngine · LLMProvider · EventBus"]
+  end
+  subgraph DOM["domain (pure)"]
+    DOM1["entities &amp; VOs<br/>ClaimState · PolicyTerms · Decision"]
+    DOM2["domain services<br/>confidence · explanation · validator"]
+    DOM3["DslRuleEngine"]
+  end
+  subgraph INF["infrastructure (adapters)"]
+    INF1["SqlAlchemyClaimRepository<br/>+ Database"]
+    INF2["JsonPolicyRepository<br/>+ json_rules_loader"]
+    INF3["MockProvider · GeminiProvider<br/>+ build_llm_provider"]
+    INF4["InMemoryEventBus<br/>+ Structlog / Notification handlers"]
+  end
+  IF -- "Depends()" --> CR
+  CR --> APP
+  APP --> DOM
+  INF -. implements .-> APP3
+  classDef domain fill:#ecfdf5,stroke:#10b981,color:#064e3b;
+  classDef app fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+  classDef infra fill:#fff7ed,stroke:#f59e0b,color:#7c2d12;
+  classDef iface fill:#f0f9ff,stroke:#0284c7,color:#0c4a6e;
+  classDef comp fill:#fdf4ff,stroke:#a855f7,color:#581c87;
+  class DOM1,DOM2,DOM3 domain
+  class APP1,APP2,APP3 app
+  class INF1,INF2,INF3,INF4 infra
+  class IF1,IF2 iface
+  class CRX comp
+        </pre>
+      </div>
+      <div class="note" style="margin-top:14px;">
+        Arrows are <b>compile-time dependencies</b>. <code>infrastructure</code> implements ports
+        defined by <code>application</code>; <b>nothing in <code>domain</code> imports anything
+        outside itself</b>.
+      </div>
+    </section>
+
+    <section id="ports">
+      <h2><span class="num">2</span> Ports &amp; Adapters (the abstraction line)</h2>
+      <p class="lead">
+        Every external concern is a small <b>interface (port)</b> the application owns, and a
+        concrete <b>adapter</b> in <code>infrastructure</code>.
+      </p>
+      <table class="ports">
+        <thead><tr><th>Port (application)</th><th>Adapter (infrastructure)</th><th>What it abstracts</th></tr></thead>
+        <tbody>
+          <tr><td><code>ClaimRepository</code></td><td><code>SqlAlchemyClaimRepository</code></td><td><code>save</code> / <code>get</code> / <code>list_recent</code> on <code>ClaimState</code></td></tr>
+          <tr><td><code>PolicyRepository</code></td><td><code>JsonPolicyRepository</code></td><td>Load the active <code>PolicyTerms</code> from <code>policy_terms.json</code></td></tr>
+          <tr><td><code>RuleEngine</code></td><td><code>DslRuleEngine</code> <span style="color:var(--muted)">(lives in <code>domain</code>)</span></td><td>Evaluate <code>policy_rules.json</code> against a <code>ClaimState</code></td></tr>
+          <tr><td><code>LLMProvider</code></td><td><code>MockProvider</code> / <code>GeminiProvider</code></td><td>Extract one document &rarr; <code>ExtractedDocument</code> + <code>LLMUsage</code></td></tr>
+          <tr><td><code>EventBus</code></td><td><code>InMemoryEventBus</code> + handlers</td><td>Publish <code>DomainEvent</code>s drained from <code>ClaimState</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="composition">
+      <h2><span class="num">3</span> Composition root — how the object graph is built</h2>
+      <p class="lead">
+        <code>compose(Settings()) &rarr; Container</code> is the one function that constructs every
+        collaborator and wires them together.
+      </p>
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  S["Settings()"]:::env
+  C["compose(settings)"]:::root
+  S --> C
+  C --> D["Database(url)"]:::infra
+  C --> JPR["JsonPolicyRepository"]:::infra
+  JPR --> PT["PolicyTerms"]:::domain
+  C --> LR["load_rules_data()"]:::infra
+  LR --> RE["DslRuleEngine"]:::domain
+  C --> CC["load_confidence_config()"]:::infra
+  C --> LF["build_llm_provider(settings)"]:::infra
+  C --> CR["SqlAlchemyClaimRepository(db)"]:::infra
+  C --> EB["InMemoryEventBus + handlers"]:::infra
+  C --> BP["build_pipeline(PipelineDeps)"]:::app
+  PT --> CONT
+  RE --> CONT
+  CC --> CONT
+  LF --> CONT
+  CR --> CONT
+  EB --> CONT
+  BP --> CONT
+  D  --> CONT
+  CONT["Container (frozen dataclass)"]:::container
+  classDef env fill:#f9fafb,stroke:#9ca3af,color:#111827;
+  classDef root fill:#fdf4ff,stroke:#a855f7,color:#581c87;
+  classDef infra fill:#fff7ed,stroke:#f59e0b,color:#7c2d12;
+  classDef domain fill:#ecfdf5,stroke:#10b981,color:#064e3b;
+  classDef app fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+  classDef container fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px;
+        </pre>
+      </div>
+    </section>
+
+    <section id="pipeline">
+      <h2><span class="num">4</span> The pipeline (LangGraph)</h2>
+      <p class="lead">
+        A <code>ClaimState</code> flows through the agents with two deliberation loops.
+      </p>
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart TD
+  S(["submit"]):::start
+  I["Intake"]:::critical
+  IStop["stop (early_stop)"]:::stop
+  DV["Document Verification"]:::critical
+  DVStop["stop (early_stop)"]:::stop
+  EX["Extraction (llm_provider)"]:::soft
+  RV["re_verification (1 retry)"]:::delib
+  CD["Contradiction Detection"]:::soft
+  PA["Policy Adjudication (rule_engine)"]:::soft
+  FC["Financial Calculation"]:::soft
+  FD["Fraud Detection"]:::soft
+  PR["policy_reconsider (1 retry)"]:::delib
+  DS["Decision Synthesizer"]:::critical
+  END(["decision"]):::start
+  S --> I
+  I -- "early_stop" --> IStop
+  I -- ok --> DV
+  DV -- "early_stop" --> DVStop
+  DV -- ok --> EX
+  EX -- "low conf / issues" --> RV
+  RV -- "(cap = 1)" --> CD
+  EX -- ok --> CD
+  CD --> PA
+  PA --> FC
+  FC --> FD
+  FD -- "fraud + clean policy" --> PR
+  PR -- "(cap = 1)" --> DS
+  FD -- ok --> DS
+  DS --> END
+  classDef start fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
+  classDef critical fill:#fee2e2,stroke:#ef4444,color:#7f1d1d;
+  classDef soft fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+  classDef delib fill:#fef3c7,stroke:#f59e0b,color:#78350f;
+  classDef stop fill:#f3f4f6,stroke:#9ca3af,color:#374151;
+        </pre>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#ef4444"></span> critical — exceptions propagate</span>
+        <span><span class="dot" style="background:#6366f1"></span> non-critical — caught, degraded</span>
+        <span><span class="dot" style="background:#f59e0b"></span> deliberation — cap of 1</span>
+        <span><span class="dot" style="background:#9ca3af"></span> early stop</span>
+      </div>
+    </section>
+
+    <section id="lifecycle">
+      <h2><span class="num">5</span> Request lifecycle (HTTP &rarr; pipeline &rarr; DB)</h2>
+      <div class="diagram">
+        <pre class="mermaid">
 sequenceDiagram
     autonumber
+    actor U as Client
+    participant R as Router (claims.py)
+    participant D as Depends() providers
+    participant C as Container (app.state)
+    participant P as Pipeline (CompiledGraph)
+    participant CR as ClaimRepository (SqlAlchemy)
+    participant EB as EventBus
+    Note over R,C: At startup: lifespan calls compose(Settings()) once
+    U->>R: POST /api/claims
+    R->>D: get_pipeline / get_claim_repository / get_event_bus
+    D->>C: read app.state.container
+    C-->>D: pipeline, repository, event_bus
+    D-->>R: pipeline, repository, event_bus
+    R->>P: run_pipeline(state, pipeline)
+    Note over P: intake - docv - extraction - contradiction - policy - financial - fraud - synthesizer
+    P-->>R: ClaimState (with Decision + pending_events)
+    R->>CR: claims.save(state)
+    CR-->>R: ok
+    R->>EB: event_bus.publish_all(state.pull_events())
+    EB-->>R: ok
+    R-->>U: 200 ClaimResponse
+        </pre>
+      </div>
+    </section>
 
-    actor U as User (UI)
-    participant API as FastAPI<br/>POST /api/claims<br/>(Depends: pipeline, claims, event_bus)
-    participant P as LangGraph<br/>Pipeline<br/>(application/pipeline.py)
-    participant ST as ClaimState<br/>(aggregate)
-    participant I as Intake
-    participant DV as Document<br/>Verification
-    participant EX as Extraction
-    participant LLM as LLMProvider<br/>(Gemini / Mock)
-    participant V as Extraction<br/>Validator
-    participant CD as Contradiction<br/>Detection
-    participant PA as Policy<br/>Adjudication
-    participant RE as DslRuleEngine<br/>(policy_rules.json)
-    participant FC as Financial<br/>Calculation
-    participant FD as Fraud<br/>Detection
-    participant DS as Decision<br/>Synthesizer
-    participant CR as ClaimRepository<br/>(SqlAlchemy adapter)
-    participant EB as EventBus<br/>+ Structlog/Notification<br/>handlers
+    <section id="layout">
+      <h2><span class="num">6</span> Folder layout</h2>
+      <pre class="tree">backend/app
+├── config.py                         <span class="c">← Settings (env-driven)</span>
+├── composition.py                    <span class="c">← Container + compose() — only place that wires deps</span>
+├── domain/                           <span class="c">← pure business types &amp; rules</span>
+│   ├── claim/                          <span class="c">(ClaimState, ClaimSummary)</span>
+│   ├── decision/                       <span class="c">(Decision, PolicyFinding, ExplanationTree)</span>
+│   ├── events/                         <span class="c">(ClaimApproved, ClaimRejected, ComponentDegraded)</span>
+│   ├── policy/                         <span class="c">(PolicyTerms, DslRuleEngine, coverage, exclusions)</span>
+│   └── services/                       <span class="c">(confidence, explanation_builder, extraction_validator)</span>
+├── application/                      <span class="c">← use cases + abstract ports</span>
+│   ├── ports/                          <span class="c">(ClaimRepository, PolicyRepository, RuleEngine, LLMProvider, EventBus)</span>
+│   ├── agents/                         <span class="c">(Intake, DocumentVerification, Extraction, …)</span>
+│   ├── pipeline.py                     <span class="c">(PipelineDeps, build_pipeline, run_pipeline)</span>
+│   └── recorder.py                     <span class="c">(TraceRecorder)</span>
+├── infrastructure/                   <span class="c">← concrete adapters</span>
+│   ├── persistence/                    <span class="c">(Database, SqlAlchemyClaimRepository, ORM)</span>
+│   ├── policy/                         <span class="c">(JsonPolicyRepository, json_rules_loader)</span>
+│   ├── llm/                            <span class="c">(MockProvider, GeminiProvider, build_llm_provider)</span>
+│   └── events/                         <span class="c">(InMemoryEventBus, structlog &amp; notification handlers)</span>
+└── interfaces/http/                  <span class="c">← FastAPI app, deps, routers</span>
+    ├── app.py                          <span class="c">(lifespan stores Container on app.state)</span>
+    ├── deps.py                         <span class="c">(get_container / get_*_repository / get_pipeline / get_event_bus)</span>
+    └── routers/                        <span class="c">(claims, members, eval, extraction)</span></pre>
+    </section>
 
-    U->>API: POST /api/claims<br/>(member, category, amount, docs)
-    Note over API: FastAPI resolves Depends():<br/>pipeline, claims (port), event_bus
-    API->>P: run_pipeline(state, compiled_pipeline)
-
-    P->>I: intake.run(state)
-    alt member not found OR policy mismatch
-        I->>ST: state.halt_early(reason, user_message)
-        Note over ST: sets early_stop / reason /<br/>user_message AND records<br/>ClaimHaltedEarly event
-        I-->>P: state (early_stop=true)
-        P-->>API: state (no decision)
-        API->>CR: claims.save(state)
-        API->>EB: event_bus.publish_all(state.pull_events())
-        Note over EB: fan-out to Structlog +<br/>NotificationStub (per-handler<br/>exception isolation)
-        API-->>U: 200 NEEDS_CORRECTION<br/>+ user_message
-    else valid
-        I-->>P: agent_results.intake = OK (1.0)
-    end
-
-    P->>DV: document_verification.run(state)
-    alt missing type / UNREADABLE / patient mismatch
-        DV->>ST: state.halt_early(err.code, error_to_user_message(err))
-        Note over ST: ClaimHaltedEarly recorded<br/>via the aggregate method
-        DV-->>P: state (early_stop + typed error)
-        P-->>API: state (no decision)
-        API->>CR: claims.save(state)
-        API->>EB: event_bus.publish_all(state.pull_events())
-        API-->>U: 200 NEEDS_REUPLOAD<br/>+ actionable message
-    else all checks pass
-        DV-->>P: agent_results.document_verification = OK
-    end
-
-    P->>EX: extraction.run(state)
-    par per-document concurrent extraction (asyncio.gather)
-        EX->>LLM: extract_document(doc, hint_category)
-        LLM-->>EX: ExtractedDocument + LLMUsage<br/>(tokens, latency, USD)
-    end
-    EX->>V: validate_extraction(doc)
-    V-->>EX: validation_issues<br/>(bill total / date / regex)
-
-    alt low confidence (&lt;0.7) OR validator issues
-        EX-->>P: state.extracted (with issues)
-        P->>P: re_verification (cap=1)
-        P->>EX: re-run extraction
-        EX-->>P: refreshed state.extracted
-    else clean
-        EX-->>P: state.extracted = clean
-    end
-
-    P->>CD: contradiction_detection.run(state)
-    Note over CD: 6 checks: patient name, dates,<br/>hospital name, amount reconcile,<br/>claimed vs bills, diagnosis-treatment
-    CD-->>P: state.contradictions
-
-    P->>PA: policy_adjudication.run(state)
-    PA->>RE: engine.evaluate(state)
-    RE-->>PA: RuleResult[]<br/>(coverage, waiting periods,<br/>exclusions, pre-auth, prescription)
-    PA-->>P: state.findings extended
-
-    P->>FC: financial_calculation.run(state)
-    Note over FC: Deterministic 6-step:<br/>line-item exclusions → per-claim cap →<br/>network discount → co-pay →<br/>sub-limit → YTD remaining
-    FC-->>P: state.line_decisions<br/>+ FINANCIAL_CALCULATION finding
-
-    P->>FD: fraud_detection.run(state)
-    alt simulate_component_failure (TC011)
-        FD-)P: raise SimulatedComponentFailure
-        Note over P: pipeline._wrap catches:<br/>state.degraded = true,<br/>failed_components += "fraud_detection"
-        P->>ST: state.record_event(ComponentDegraded)
-    else fraud signals raised
-        FD-->>P: state.fraud_signals<br/>(same-day / monthly / high-value)
-        FD->>ST: state.record_event(FraudSignalsRaised)
-    else clean
-        FD-->>P: no signals
-    end
-
-    alt fraud signals AND no policy rule failed
-        P->>P: policy_reconsider (cap=1)
-        Note over P: flag for manual review<br/>because fraud disagrees with policy
-    end
-
-    P->>DS: decision_synthesizer.run(state)
-    DS->>DS: compute_confidence<br/>Σ wᵢ·Cᵢ − α·contradiction − β·degraded
-    DS->>DS: route by precedence:<br/>HARD_REJECT → FRAUD_INVESTIGATION →<br/>ESCALATED_MEDICAL_REVIEW → MANUAL_REVIEW →<br/>NEEDS_CLARIFICATION → PARTIAL → APPROVED → REJECTED
-    DS->>DS: build_explanation_tree(state, decision)
-    DS->>ST: state.record_event(<br/>ClaimApproved | ClaimPartiallyApproved |<br/>ClaimRejected | ManualReviewRequired)
-    DS-->>P: state.decision<br/>(status, approved_amount, reasons,<br/>confidence, user_message, breakdown,<br/>cost rollup)
-
-    P-->>API: ClaimState (final, with trace + pending_events)
-    API->>CR: claims.save(state)
-    CR-->>API: ok
-    API->>EB: event_bus.publish_all(state.pull_events())
-    Note over EB: sequential async fan-out<br/>StructlogEventHandler → "domain_event" log line<br/>NotificationStubHandler → "would_notify_member"
-    EB-->>API: ok
-    API-->>U: 200 ClaimResponse<br/>(claim_id, full state)
-      </pre>
-    </div>
+    <section id="payoff">
+      <h2><span class="num">7</span> What this buys you</h2>
+      <ul class="payoffs">
+        <li><b>Swapability.</b><span>Replace JSON policy storage with a REST policy service: write a new <code>PolicyRepository</code> adapter, change one line in <code>composition.py</code>.</span></li>
+        <li><b>Testability.</b><span>Unit tests build the exact adapter they need and inject it. No global state to reset.</span></li>
+        <li><b>One source of truth.</b><span><code>compose()</code> is the only function that knows the wiring.</span></li>
+        <li><b>No hidden state.</b><span>Zero <code>lru_cache</code> / module-globals. Lifetimes are explicit and owned by the <code>Container</code>.</span></li>
+      </ul>
+    </section>
 
     <footer>
-      Diagram reflects the hex-layer wiring: pipeline in <code>backend/app/application/pipeline.py</code>, agents in <code>backend/app/application/agents/</code>, ports in <code>backend/app/application/ports/</code>, adapters (SqlAlchemy repository, JSON policy loader, Gemini/Mock providers, InMemoryEventBus + handlers) in <code>backend/app/infrastructure/</code>, FastAPI routers + <code>Depends()</code> in <code>backend/app/interfaces/http/</code>, and the composition root at <code>backend/app/composition.py</code>.
-      Critical agents (intake, document_verification, decision_synthesizer) re-raise; non-critical agents are caught by <code>pipeline._wrap</code>, which records the failure on the trace, marks the run degraded, and records a <code>ComponentDegraded</code> event. Domain events (<code>ClaimApproved</code>, <code>ClaimPartiallyApproved</code>, <code>ClaimRejected</code>, <code>ManualReviewRequired</code>, <code>ClaimHaltedEarly</code>, <code>ComponentDegraded</code>, <code>FraudSignalsRaised</code>) are buffered on <code>ClaimState</code> and dispatched exactly once per claim, after persistence.
+      Diagrams reflect the live code in <code>backend/app/</code>. Pipeline wiring lives in
+      <code>backend/app/application/pipeline.py</code>; the composition root is
+      <code>backend/app/composition.py</code>. For per-agent contracts see
+      <a href="AGENTS.md"><code>AGENTS.md</code></a>; for component IO/error contracts see
+      <a href="docs/COMPONENT_CONTRACTS.md"><code>docs/COMPONENT_CONTRACTS.md</code></a>.
     </footer>
   </div>
-
   <script>
     mermaid.initialize({
-      startOnLoad: true,
-      theme: "base",
+      startOnLoad: true, theme: "base",
       themeVariables: {
-        background: "#ffffff",
-        primaryColor: "#ffffff",
-        primaryTextColor: "#111827",
-        primaryBorderColor: "#9ca3af",
-        lineColor: "#374151",
-        secondaryColor: "#f3f4f6",
-        tertiaryColor: "#ffffff",
-        actorBkg: "#ffffff",
-        actorBorder: "#1f2937",
-        actorTextColor: "#111827",
-        actorLineColor: "#9ca3af",
-        signalColor: "#1f2937",
-        signalTextColor: "#111827",
-        labelBoxBkgColor: "#eef2ff",
-        labelBoxBorderColor: "#6366f1",
-        labelTextColor: "#111827",
-        loopTextColor: "#111827",
-        noteBkgColor: "#fef3c7",
-        noteTextColor: "#111827",
-        noteBorderColor: "#f59e0b",
-        activationBkgColor: "#dbeafe",
-        activationBorderColor: "#2563eb",
+        background: "#ffffff", primaryColor: "#ffffff", primaryTextColor: "#111827",
+        primaryBorderColor: "#9ca3af", lineColor: "#374151", secondaryColor: "#f3f4f6",
+        tertiaryColor: "#ffffff", clusterBkg: "#fafafa", clusterBorder: "#d1d5db",
+        edgeLabelBackground: "#ffffff", labelBoxBkgColor: "#eef2ff",
+        labelBoxBorderColor: "#6366f1", labelTextColor: "#111827", loopTextColor: "#111827",
+        noteBkgColor: "#fef3c7", noteTextColor: "#111827", noteBorderColor: "#f59e0b",
+        actorBkg: "#ffffff", actorBorder: "#1f2937", actorTextColor: "#111827",
+        actorLineColor: "#9ca3af", signalColor: "#1f2937", signalTextColor: "#111827",
+        activationBkgColor: "#dbeafe", activationBorderColor: "#2563eb",
         sequenceNumberColor: "#ffffff"
       },
-      sequence: {
-        diagramMarginX: 32,
-        diagramMarginY: 16,
-        actorMargin: 56,
-        boxMargin: 12,
-        boxTextMargin: 8,
-        noteMargin: 10,
-        messageMargin: 36,
-        mirrorActors: true,
-        useMaxWidth: true,
-        wrap: true
-      },
+      flowchart: { htmlLabels: true, curve: "basis", nodeSpacing: 36, rankSpacing: 48, useMaxWidth: true },
+      sequence: { diagramMarginX: 32, diagramMarginY: 16, actorMargin: 56, boxMargin: 12, boxTextMargin: 8, noteMargin: 10, messageMargin: 36, mirrorActors: true, useMaxWidth: true, wrap: true },
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     });
   </script>

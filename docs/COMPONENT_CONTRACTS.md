@@ -303,9 +303,19 @@ guarantee termination.
 ### `re_verification` (cap = 1)
 
 Triggers when any extracted doc has `extraction_confidence < 0.7` OR any
-`validation_issues`. Bumps `state.deliberation_iterations["re_extraction"]`,
-records a trace step, and routes back to extraction. None of the 12
-fixture cases trigger this (mock confidences are 0.95).
+`validation_issues`. For each flagged document it re-calls
+`provider.extract_document(doc, feedback=...)`, passing the prior
+validation issues as feedback. The Gemini adapter incorporates the
+feedback into the prompt and bumps temperature from 0.1 to 0.4 so the
+model is actually allowed to change its answer; the Mock adapter records
+the feedback on `raw` (mock content is deterministic, so the answer is
+unchanged) and the trace explicitly notes that. The new entry is
+re-run through the deterministic validator and swapped into
+`state.extracted` in place. Per-doc retry failures are non-fatal — the
+original extraction is kept and the failure is recorded on the trace.
+Bumps `state.deliberation_iterations["re_extraction"]` exactly once per
+invocation and routes to `contradiction_detection` (no need to loop
+back through `extraction`).
 
 ### `policy_reconsider` (cap = 1)
 
@@ -346,6 +356,21 @@ to `state.cost.llm_calls`.
 | `MockProvider` | Tests, eval suite, missing API key | `ProviderError` for malformed mock content; usage is synthesized from payload size |
 | `GeminiProvider` | `LLM_PROVIDER=gemini` and `GEMINI_API_KEY` set | `ProviderError`, `LLMTimeoutError` (30s timeout); usage pulled from `response.usage_metadata` |
 
+### Provider branches for the upload + preview path
+
+Both providers have three input shapes. Branch selection is deterministic:
+
+| Branch | Trigger | Behaviour | LLM call? |
+| --- | --- | --- | --- |
+| **Vision OCR** | `bytes_b64` + `mime_type` set | Real OCR on the uploaded image/PDF. Gemini only — mock falls into the "upload stub" branch instead. | Yes (Gemini) |
+| **Upload stub (mock)** | `bytes_b64` set, no `content`, mock provider | Returns an explicitly low-confidence stub (`extraction_confidence=0.45`, `raw._mock_source="uploaded_bytes_stub"`) so the demo flow is visible without a Gemini key. | No |
+| **Content fallback** | `content` populated, no `bytes_b64` | Builds `ExtractedDocument` from `content` directly. Used by both providers at submit-time after the preview has already extracted (so we don't pay for OCR twice or hallucinate from a filename). | No |
+| **Typed-only fallback** | No `bytes_b64`, no `content` | Skeleton extraction from `doc.actual_type` / `doc.patient_name_on_doc` with medium confidence. Eval suite path when a fixture omits `content`. | No |
+
+**Invariant**: exactly one Gemini call per uploaded document across the
+whole `preview → autofill → submit → pipeline` flow. The preview is the
+canonical extraction; submit-time extraction is content-driven.
+
 ---
 
 ## TraceRecorder
@@ -374,12 +399,50 @@ captured.
 | Method | Path | Body / params | Returns |
 | --- | --- | --- | --- |
 | POST | `/api/claims` | `ClaimInput` JSON | `{claim_id, state}` (full ClaimState JSON) |
+| POST | `/api/claims/extract-preview` | `{document: DocumentInput, hint_category?: str}` | `ExtractPreviewResponse` (see below) |
 | GET | `/api/claims/{id}` | — | `{claim_id, state}` |
 | GET | `/api/claims?limit=50` | — | List of summary records |
 | GET | `/api/members` | — | Member roster from `policy_terms.json` |
 | GET | `/api/policy` | — | Policy summary (categories, doc requirements, network hospitals, thresholds) |
 | GET | `/api/eval/run` | — | `{total, passed, failed, results: [...]}` |
 | GET | `/health` | — | `{status, llm_provider}` |
+
+### `POST /api/claims/extract-preview`
+
+Runs only the configured LLM provider on one uploaded document so the
+form can pre-fill the typed fields. No pipeline, no persistence, no
+events. Failure is encoded inline (HTTP 200) so the UI shows
+actionable guidance instead of a generic 500:
+
+```jsonc
+// success
+{
+  "ok": true,
+  "extracted": { /* ExtractedDocument */ },
+  "usage":     { "model": "...", "tokens_in": 0, "tokens_out": 0, ... },
+  "validation_issues": []
+}
+// failure (provider timeout / parse error / missing API key)
+{
+  "ok": false,
+  "extracted": null,
+  "usage": null,
+  "validation_issues": [],
+  "reason": "ProviderError",
+  "message": "Gemini call failed for F001: ..."
+}
+```
+
+Errors:
+- `422 Unprocessable Entity` if `bytes_b64` exceeds ~10 MB (`MAX_BYTES_B64_LEN = 14_000_000` chars). The size validator on `DocumentInput.bytes_b64` runs before the provider is invoked.
+- `{ok: false, reason: "ProviderError" | "LLMTimeoutError" | ...}` for any extraction failure (HTTP 200).
+
+Persistence note: when the full claim is later POSTed to `/api/claims`,
+the frontend sends only the typed `content` (auto-filled from this
+preview, optionally user-edited). It does not re-send `bytes_b64`. The
+SqlAlchemy repository also strips `bytes_b64` and `mime_type` from any
+documents it does receive before writing to SQLite, so uploaded images
+are never persisted.
 
 The `POST /api/claims` and `GET /api/eval/run` paths both finish with:
 

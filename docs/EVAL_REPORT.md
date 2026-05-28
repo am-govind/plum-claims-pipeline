@@ -1,6 +1,6 @@
 # Eval Report
 
-_Generated: 2026-05-27T18:25:29.218140+00:00_
+_Generated: 2026-05-28T05:03:31.829586+00:00_
 
 **Summary**: 12/12 cases passed.
 
@@ -9,21 +9,21 @@ _Generated: 2026-05-27T18:25:29.218140+00:00_
 | TC001 | Wrong Document Uploaded | EARLY_STOP | EARLY_STOP | — | 0.5 | 0 ms | 0 | PASS |
 | TC002 | Unreadable Document | EARLY_STOP | EARLY_STOP | — | 0.5 | 0 ms | 0 | PASS |
 | TC003 | Documents Belong to Different Patients | EARLY_STOP | EARLY_STOP | — | 0.5 | 0 ms | 0 | PASS |
-| TC004 | Clean Consultation — Full Approval | APPROVED | APPROVED | 1350.0 | 0.985 | 16 ms | 1361 | PASS |
-| TC005 | Waiting Period — Diabetes | REJECTED | REJECTED | 0.0 | 0.977 | 0 ms | 1268 | PASS |
-| TC006 | Dental Partial Approval — Cosmetic Exclusion | PARTIAL | PARTIAL | 8000.0 | 0.985 | 0 ms | 657 | PASS |
-| TC007 | MRI Without Pre-Authorization | REJECTED | REJECTED | 0.0 | 0.893 | 0 ms | 3732 | PASS |
-| TC008 | Per-Claim Limit Exceeded | REJECTED | REJECTED | 0.0 | 0.94 | 0 ms | 2640 | PASS |
-| TC009 | Fraud Signal — Multiple Same-Day Claims | MANUAL_REVIEW | MANUAL_REVIEW | 4320.0 | 0.91 | 0 ms | 2284 | PASS |
-| TC010 | Network Hospital — Discount Applied | APPROVED | APPROVED | 3240.0 | 0.985 | 0 ms | 1279 | PASS |
-| TC011 | Component Failure — Graceful Degradation | APPROVED | APPROVED | 4000.0 | 0.59 | 0 ms | 2592 | PASS |
-| TC012 | Excluded Treatment | REJECTED | REJECTED | 0.0 | 0.932 | 0 ms | 2628 | PASS |
+| TC004 | Clean Consultation — Full Approval | APPROVED | APPROVED | 1350.0 | 0.985 | 20 ms | 1386 | PASS |
+| TC005 | Waiting Period — Diabetes | REJECTED | REJECTED | 0.0 | 0.977 | 0 ms | 1225 | PASS |
+| TC006 | Dental Partial Approval — Cosmetic Exclusion | PARTIAL | PARTIAL | 8000.0 | 0.985 | 0 ms | 645 | PASS |
+| TC007 | MRI Without Pre-Authorization | REJECTED | REJECTED | 0.0 | 0.908 | 0 ms | 3095 | PASS |
+| TC008 | Per-Claim Limit Exceeded | REJECTED | REJECTED | 0.0 | 0.962 | 0 ms | 1900 | PASS |
+| TC009 | Fraud Signal — Multiple Same-Day Claims | MANUAL_REVIEW | MANUAL_REVIEW | 4320.0 | 0.932 | 0 ms | 1705 | PASS |
+| TC010 | Network Hospital — Discount Applied | APPROVED | APPROVED | 3240.0 | 0.985 | 0 ms | 1362 | PASS |
+| TC011 | Component Failure — Graceful Degradation | APPROVED | APPROVED | 4000.0 | 0.612 | 0 ms | 2003 | PASS |
+| TC012 | Excluded Treatment | REJECTED | REJECTED | 0.0 | 0.955 | 0 ms | 1917 | PASS |
 
 ## Aggregate metrics
 
 - **Latency**: P50 = 0 ms · P95 = 0 ms · avg = 1 ms · median = 0 ms
-- **Tokens**: 13,709 in + 4,732 out = 18,441 total · est. cost ≈ $0.000000
-- **Extraction validation issues** (hallucination proxy): 11 across 5 cases
+- **Tokens**: 11,203 in + 4,035 out = 15,238 total · est. cost ≈ $0.000000
+- **Extraction validation issues** (hallucination proxy): 6 across 5 cases
 - **Cross-document contradictions detected**: 1
 - **Deliberation cycles triggered**: 5
 
@@ -39,8 +39,8 @@ _Generated: 2026-05-27T18:25:29.218140+00:00_
 | [0.5, 0.6) |  0 |
 | [0.6, 0.7) |  0 |
 | [0.7, 0.8) |  0 |
-| [0.8, 0.9) | ███████████ 11 |
-| [0.9, 1.0) | ███████ 7 |
+| [0.8, 0.9) | ██████ 6 |
+| [0.9, 1.0) | ████████████ 12 |
 
 ### Rule coverage matrix (rules that fired in each case)
 
@@ -487,8 +487,8 @@ _(no decision; pipeline halted early)_
 - Approved: ₹0.00 of ₹3000.00
 - Confidence: 0.977
 - Rejection reasons: ['WAITING_PERIOD']
-- Summary: Treatment date ${treatment_date} is within the ${days_required}-day diabetes waiting period. Member becomes eligible from ${eligibility_date}.
-- User message: Your claim has been rejected because the treatment date (2024-10-15) is within the 90-day waiting period. You will be eligible for this type of claim from 2024-11-30. Please resubmit on or after that date.
+- Summary: Treatment date 2024-10-15 is within the 90-day waiting period for diabetes. Member becomes eligible from 2024-11-30.
+- User message: Your claim has been rejected because the treatment date (2024-10-15) is within the 90-day waiting period for diabetes. You will be eligible for this type of claim from 2024-11-30. Please resubmit on or after that date.
 - Degraded: False, failed components: —
 
 **system_must checks**:
@@ -693,7 +693,7 @@ _(no decision; pipeline halted early)_
   "monthly_count": 0
 }
   ```
-- **decision_synthesizer** — `OK` (0ms): REJECTED: Treatment date ${treatment_date} is within the ${days_required}-day diabetes waiting period. Member becomes eligible from ${eligibility_date}.
+- **decision_synthesizer** — `OK` (0ms): REJECTED: Treatment date 2024-10-15 is within the 90-day waiting period for diabetes. Member becomes eligible from 2024-11-30.
   ```json
 {
   "status": "REJECTED",
@@ -957,10 +957,10 @@ _(no decision; pipeline halted early)_
 **Decision (actual)**:
 - Status: **REJECTED**
 - Approved: ₹0.00 of ₹15000.00
-- Confidence: 0.893
+- Confidence: 0.908
 - Rejection reasons: ['PRE_AUTH_MISSING', 'PER_CLAIM_EXCEEDED']
-- Summary: Pre-authorization required for ${matched_test} above the threshold. Claim amount ₹${claimed_amount} requires prior approval, which was not obtained. Please obtain pre-authorization from the insurer for this test, then resubmit the claim with the pre-auth reference number.
-- User message: Your claim has been rejected because pre-authorization was required for None above ₹10,000 but was not obtained. 
+- Summary: Pre-authorization required for MRI above the threshold. Claim amount ₹15,000 requires prior approval, which was not obtained. Please obtain pre-authorization from the insurer for this test, then resubmit the claim with the pre-auth reference number.
+- User message: Your claim has been rejected because pre-authorization was required for MRI above ₹10,000 but was not obtained. Please contact the insurer to obtain a pre-authorization reference number for this test, then resubmit the claim with that reference attached.
 - Degraded: False, failed components: —
 
 **system_must checks**:
@@ -1002,7 +1002,7 @@ _(no decision; pipeline halted early)_
   "patient_names": []
 }
   ```
-- **extraction_validation** — `WARNING` (0ms): 3 extraction validation issue(s) flagged across 3 document(s)
+- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
   ```json
 {
   "issues_by_file": {
@@ -1011,9 +1011,6 @@ _(no decision; pipeline halted early)_
     ],
     "F013": [
       "patient_name missing on LAB_REPORT (expected on this doc type)"
-    ],
-    "F014": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
     ]
   }
 }
@@ -1047,69 +1044,28 @@ _(no decision; pipeline halted early)_
       "diagnosis": null,
       "total": 15000.0,
       "line_items": 1,
-      "confidence": 0.8
+      "confidence": 0.95
     }
   ],
   "provider": "mock"
 }
   ```
-- **re_verification** — `WARNING` (0ms): Deliberation cycle: 3 extraction validation issue(s) and/or low extraction confidence; routing back to extraction (iteration 1/1)
+- **re_verification** — `WARNING` (0ms): Re-extracted 2 document(s) with provider=mock; no measurable improvement (provider=mock may not act on feedback, or the underlying document didn't support a better extraction)
   ```json
 {
   "iteration": 1,
   "cap": 1,
-  "extraction_issues": 3
-}
-  ```
-- **extraction_validation** — `WARNING` (0ms): 3 extraction validation issue(s) flagged across 3 document(s)
-  ```json
-{
-  "issues_by_file": {
-    "F012": [
-      "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F013": [
-      "patient_name missing on LAB_REPORT (expected on this doc type)"
-    ],
-    "F014": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
-    ]
-  }
-}
-  ```
-- **extraction** — `OK` (0ms): Extracted 3 document(s) with provider=mock
-  ```json
-{
-  "documents": [
-    {
-      "file_id": "F012",
-      "type": "PRESCRIPTION",
-      "patient": null,
-      "diagnosis": "Suspected Lumbar Disc Herniation",
-      "total": null,
-      "line_items": 0,
-      "confidence": 0.8
-    },
-    {
-      "file_id": "F013",
-      "type": "LAB_REPORT",
-      "patient": null,
-      "diagnosis": null,
-      "total": null,
-      "line_items": 0,
-      "confidence": 0.8
-    },
-    {
-      "file_id": "F014",
-      "type": "HOSPITAL_BILL",
-      "patient": null,
-      "diagnosis": null,
-      "total": 15000.0,
-      "line_items": 1,
-      "confidence": 0.8
-    }
+  "provider": "mock",
+  "targets": [
+    "F012",
+    "F013"
   ],
-  "provider": "mock"
+  "retried": [
+    "F012",
+    "F013"
+  ],
+  "improved": [],
+  "failed": []
 }
   ```
 - **contradiction_detection** — `WARNING` (0ms): 1 cross-document contradiction(s) detected
@@ -1258,7 +1214,7 @@ _(no decision; pipeline halted early)_
   "monthly_count": 0
 }
   ```
-- **decision_synthesizer** — `OK` (0ms): REJECTED: Pre-authorization required for ${matched_test} above the threshold. Claim amount ₹${claimed_amount} requires prior approval, which was not obtained. Please obtain pre-authorization from the insurer for this test, then resubmit the claim with the pre-auth reference number.
+- **decision_synthesizer** — `OK` (0ms): REJECTED: Pre-authorization required for MRI above the threshold. Claim amount ₹15,000 requires prior approval, which was not obtained. Please obtain pre-authorization from the insurer for this test, then resubmit the claim with the pre-auth reference number.
   ```json
 {
   "status": "REJECTED",
@@ -1267,7 +1223,7 @@ _(no decision; pipeline halted early)_
     "PRE_AUTH_MISSING",
     "PER_CLAIM_EXCEEDED"
   ],
-  "confidence": 0.893
+  "confidence": 0.908
 }
   ```
 
@@ -1293,7 +1249,7 @@ _(no decision; pipeline halted early)_
 **Decision (actual)**:
 - Status: **REJECTED**
 - Approved: ₹0.00 of ₹7500.00
-- Confidence: 0.94
+- Confidence: 0.962
 - Rejection reasons: ['PER_CLAIM_EXCEEDED']
 - Summary: Claimed amount ₹7,500 exceeds per-claim limit of ₹5,000
 - User message: Your claim has been rejected because the claimed amount ₹7,500 exceeds the per-claim limit of ₹5,000 under this policy. Please split the claim or contact your HR team.
@@ -1334,15 +1290,12 @@ _(no decision; pipeline halted early)_
   "patient_names": []
 }
   ```
-- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
+- **extraction_validation** — `WARNING` (0ms): 1 extraction validation issue(s) flagged across 1 document(s)
   ```json
 {
   "issues_by_file": {
     "F015": [
       "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F016": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
     ]
   }
 }
@@ -1367,57 +1320,26 @@ _(no decision; pipeline halted early)_
       "diagnosis": null,
       "total": 7500.0,
       "line_items": 2,
-      "confidence": 0.8
+      "confidence": 0.95
     }
   ],
   "provider": "mock"
 }
   ```
-- **re_verification** — `WARNING` (0ms): Deliberation cycle: 2 extraction validation issue(s) and/or low extraction confidence; routing back to extraction (iteration 1/1)
+- **re_verification** — `WARNING` (0ms): Re-extracted 1 document(s) with provider=mock; no measurable improvement (provider=mock may not act on feedback, or the underlying document didn't support a better extraction)
   ```json
 {
   "iteration": 1,
   "cap": 1,
-  "extraction_issues": 2
-}
-  ```
-- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
-  ```json
-{
-  "issues_by_file": {
-    "F015": [
-      "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F016": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
-    ]
-  }
-}
-  ```
-- **extraction** — `OK` (0ms): Extracted 2 document(s) with provider=mock
-  ```json
-{
-  "documents": [
-    {
-      "file_id": "F015",
-      "type": "PRESCRIPTION",
-      "patient": null,
-      "diagnosis": "Gastroenteritis",
-      "total": null,
-      "line_items": 0,
-      "confidence": 0.8
-    },
-    {
-      "file_id": "F016",
-      "type": "HOSPITAL_BILL",
-      "patient": null,
-      "diagnosis": null,
-      "total": 7500.0,
-      "line_items": 2,
-      "confidence": 0.8
-    }
+  "provider": "mock",
+  "targets": [
+    "F015"
   ],
-  "provider": "mock"
+  "retried": [
+    "F015"
+  ],
+  "improved": [],
+  "failed": []
 }
   ```
 - **contradiction_detection** — `OK` (0ms): No cross-document contradictions detected
@@ -1564,7 +1486,7 @@ _(no decision; pipeline halted early)_
   "rejection_reasons": [
     "PER_CLAIM_EXCEEDED"
   ],
-  "confidence": 0.94
+  "confidence": 0.962
 }
   ```
 
@@ -1589,7 +1511,7 @@ _(no decision; pipeline halted early)_
 **Decision (actual)**:
 - Status: **MANUAL_REVIEW**
 - Approved: ₹4320.00 of ₹4800.00
-- Confidence: 0.91
+- Confidence: 0.932
 - Rejection reasons: —
 - Summary: Fraud signals require manual review
 - User message: Your claim has been routed to a human reviewer because we detected unusual patterns: Same-day claim count 4 exceeds limit 2. You'll hear back within 2 business days.
@@ -1632,15 +1554,12 @@ _(no decision; pipeline halted early)_
   "patient_names": []
 }
   ```
-- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
+- **extraction_validation** — `WARNING` (0ms): 1 extraction validation issue(s) flagged across 1 document(s)
   ```json
 {
   "issues_by_file": {
     "F017": [
       "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F018": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
     ]
   }
 }
@@ -1665,57 +1584,26 @@ _(no decision; pipeline halted early)_
       "diagnosis": null,
       "total": 4800.0,
       "line_items": 0,
-      "confidence": 0.8
+      "confidence": 0.95
     }
   ],
   "provider": "mock"
 }
   ```
-- **re_verification** — `WARNING` (0ms): Deliberation cycle: 2 extraction validation issue(s) and/or low extraction confidence; routing back to extraction (iteration 1/1)
+- **re_verification** — `WARNING` (0ms): Re-extracted 1 document(s) with provider=mock; no measurable improvement (provider=mock may not act on feedback, or the underlying document didn't support a better extraction)
   ```json
 {
   "iteration": 1,
   "cap": 1,
-  "extraction_issues": 2
-}
-  ```
-- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
-  ```json
-{
-  "issues_by_file": {
-    "F017": [
-      "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F018": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
-    ]
-  }
-}
-  ```
-- **extraction** — `OK` (0ms): Extracted 2 document(s) with provider=mock
-  ```json
-{
-  "documents": [
-    {
-      "file_id": "F017",
-      "type": "PRESCRIPTION",
-      "patient": null,
-      "diagnosis": "Migraine",
-      "total": null,
-      "line_items": 0,
-      "confidence": 0.8
-    },
-    {
-      "file_id": "F018",
-      "type": "HOSPITAL_BILL",
-      "patient": null,
-      "diagnosis": null,
-      "total": 4800.0,
-      "line_items": 0,
-      "confidence": 0.8
-    }
+  "provider": "mock",
+  "targets": [
+    "F017"
   ],
-  "provider": "mock"
+  "retried": [
+    "F017"
+  ],
+  "improved": [],
+  "failed": []
 }
   ```
 - **contradiction_detection** — `OK` (0ms): No cross-document contradictions detected
@@ -1863,7 +1751,7 @@ _(no decision; pipeline halted early)_
   "status": "MANUAL_REVIEW",
   "approved_amount": 4320.0,
   "rejection_reasons": [],
-  "confidence": 0.91
+  "confidence": 0.932
 }
   ```
 
@@ -2132,7 +2020,7 @@ _(no decision; pipeline halted early)_
 **Decision (actual)**:
 - Status: **APPROVED**
 - Approved: ₹4000.00 of ₹4000.00
-- Confidence: 0.59
+- Confidence: 0.612
 - Rejection reasons: —
 - Summary: Approved ₹4,000.00
 - User message: Approved: ₹4,000.00 of ₹4,000 claimed. Note: a non-critical component did not complete; manual review recommended for full audit.
@@ -2176,15 +2064,12 @@ _(no decision; pipeline halted early)_
   "patient_names": []
 }
   ```
-- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
+- **extraction_validation** — `WARNING` (0ms): 1 extraction validation issue(s) flagged across 1 document(s)
   ```json
 {
   "issues_by_file": {
     "F021": [
       "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F022": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
     ]
   }
 }
@@ -2209,57 +2094,26 @@ _(no decision; pipeline halted early)_
       "diagnosis": null,
       "total": 4000.0,
       "line_items": 2,
-      "confidence": 0.8
+      "confidence": 0.95
     }
   ],
   "provider": "mock"
 }
   ```
-- **re_verification** — `WARNING` (0ms): Deliberation cycle: 2 extraction validation issue(s) and/or low extraction confidence; routing back to extraction (iteration 1/1)
+- **re_verification** — `WARNING` (0ms): Re-extracted 1 document(s) with provider=mock; no measurable improvement (provider=mock may not act on feedback, or the underlying document didn't support a better extraction)
   ```json
 {
   "iteration": 1,
   "cap": 1,
-  "extraction_issues": 2
-}
-  ```
-- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
-  ```json
-{
-  "issues_by_file": {
-    "F021": [
-      "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F022": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
-    ]
-  }
-}
-  ```
-- **extraction** — `OK` (0ms): Extracted 2 document(s) with provider=mock
-  ```json
-{
-  "documents": [
-    {
-      "file_id": "F021",
-      "type": "PRESCRIPTION",
-      "patient": null,
-      "diagnosis": "Chronic Joint Pain",
-      "total": null,
-      "line_items": 0,
-      "confidence": 0.8
-    },
-    {
-      "file_id": "F022",
-      "type": "HOSPITAL_BILL",
-      "patient": null,
-      "diagnosis": null,
-      "total": 4000.0,
-      "line_items": 2,
-      "confidence": 0.8
-    }
+  "provider": "mock",
+  "targets": [
+    "F021"
   ],
-  "provider": "mock"
+  "retried": [
+    "F021"
+  ],
+  "improved": [],
+  "failed": []
 }
   ```
 - **contradiction_detection** — `OK` (0ms): No cross-document contradictions detected
@@ -2395,7 +2249,7 @@ _(no decision; pipeline halted early)_
   "status": "APPROVED",
   "approved_amount": 4000.0,
   "rejection_reasons": [],
-  "confidence": 0.59
+  "confidence": 0.612
 }
   ```
 
@@ -2419,10 +2273,10 @@ _(no decision; pipeline halted early)_
 **Decision (actual)**:
 - Status: **REJECTED**
 - Approved: ₹0.00 of ₹8000.00
-- Confidence: 0.932
-- Rejection reasons: ['WAITING_PERIOD', 'EXCLUDED_CONDITION', 'PER_CLAIM_EXCEEDED']
-- Summary: Treatment date ${treatment_date} is within the ${days_required}-day obesity-treatment waiting period. Member becomes eligible from ${eligibility_date}.
-- User message: Your claim has been rejected because the treatment date (2024-10-18) is within the 365-day waiting period. You will be eligible for this type of claim from 2025-04-01. Please resubmit on or after that date.
+- Confidence: 0.955
+- Rejection reasons: ['EXCLUDED_CONDITION', 'WAITING_PERIOD', 'PER_CLAIM_EXCEEDED']
+- Summary: Diagnosis/treatment matches excluded condition: 'Obesity and weight loss programs'.
+- User message: Your claim has been rejected because the diagnosis/treatment ('Morbid Obesity — BMI 37') is excluded under this policy ('Obesity and weight loss programs'). Excluded conditions are not covered regardless of amount or waiting period — please contact your HR team about alternative benefits if you need coverage for this.
 - Degraded: False, failed components: —
 
 **system_must checks**:
@@ -2459,15 +2313,12 @@ _(no decision; pipeline halted early)_
   "patient_names": []
 }
   ```
-- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
+- **extraction_validation** — `WARNING` (0ms): 1 extraction validation issue(s) flagged across 1 document(s)
   ```json
 {
   "issues_by_file": {
     "F023": [
       "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F024": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
     ]
   }
 }
@@ -2492,57 +2343,26 @@ _(no decision; pipeline halted early)_
       "diagnosis": null,
       "total": 8000.0,
       "line_items": 2,
-      "confidence": 0.8
+      "confidence": 0.95
     }
   ],
   "provider": "mock"
 }
   ```
-- **re_verification** — `WARNING` (0ms): Deliberation cycle: 2 extraction validation issue(s) and/or low extraction confidence; routing back to extraction (iteration 1/1)
+- **re_verification** — `WARNING` (0ms): Re-extracted 1 document(s) with provider=mock; no measurable improvement (provider=mock may not act on feedback, or the underlying document didn't support a better extraction)
   ```json
 {
   "iteration": 1,
   "cap": 1,
-  "extraction_issues": 2
-}
-  ```
-- **extraction_validation** — `WARNING` (0ms): 2 extraction validation issue(s) flagged across 2 document(s)
-  ```json
-{
-  "issues_by_file": {
-    "F023": [
-      "patient_name missing on PRESCRIPTION (expected on this doc type)"
-    ],
-    "F024": [
-      "patient_name missing on HOSPITAL_BILL (expected on this doc type)"
-    ]
-  }
-}
-  ```
-- **extraction** — `OK` (0ms): Extracted 2 document(s) with provider=mock
-  ```json
-{
-  "documents": [
-    {
-      "file_id": "F023",
-      "type": "PRESCRIPTION",
-      "patient": null,
-      "diagnosis": "Morbid Obesity \u2014 BMI 37",
-      "total": null,
-      "line_items": 0,
-      "confidence": 0.8
-    },
-    {
-      "file_id": "F024",
-      "type": "HOSPITAL_BILL",
-      "patient": null,
-      "diagnosis": null,
-      "total": 8000.0,
-      "line_items": 2,
-      "confidence": 0.8
-    }
+  "provider": "mock",
+  "targets": [
+    "F023"
   ],
-  "provider": "mock"
+  "retried": [
+    "F023"
+  ],
+  "improved": [],
+  "failed": []
 }
   ```
 - **contradiction_detection** — `OK` (0ms): No cross-document contradictions detected
@@ -2681,17 +2501,17 @@ _(no decision; pipeline halted early)_
   "monthly_count": 0
 }
   ```
-- **decision_synthesizer** — `OK` (0ms): REJECTED: Treatment date ${treatment_date} is within the ${days_required}-day obesity-treatment waiting period. Member becomes eligible from ${eligibility_date}.
+- **decision_synthesizer** — `OK` (0ms): REJECTED: Diagnosis/treatment matches excluded condition: 'Obesity and weight loss programs'.
   ```json
 {
   "status": "REJECTED",
   "approved_amount": 0.0,
   "rejection_reasons": [
-    "WAITING_PERIOD",
     "EXCLUDED_CONDITION",
+    "WAITING_PERIOD",
     "PER_CLAIM_EXCEEDED"
   ],
-  "confidence": 0.932
+  "confidence": 0.955
 }
   ```
 

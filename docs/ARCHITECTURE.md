@@ -64,9 +64,9 @@ flowchart TD
     Intake -->|ok| Verify[Document Verification]
     Verify -->|wrong type / unreadable / patient mismatch| Persist
     Verify -->|ok| Extract[Extraction + Validator<br/>Gemini or Mock]
-    Extract -->|low conf or validation issues| ReVerify[re_verification<br/>cap=1]
+    Extract -->|low conf or validation issues| ReVerify[re_verification<br/>cap=1<br/>re-runs provider<br/>with feedback]
     Extract -->|ok| Contradict[Contradiction Detection]
-    ReVerify --> Extract
+    ReVerify --> Contradict
     Contradict --> Policy[Policy Adjudication<br/>JSON Rule Engine]
     Policy --> Finance[Financial Calculation]
     Finance --> Fraud[Fraud Detection]
@@ -110,7 +110,7 @@ See:
 | `PolicyAdjudicationAgent` | Thin loop over the JSON rule engine: coverage, exclusions, waiting periods, pre-auth, prescription requirement | No |
 | `FinancialCalculationAgent` | Deterministic six-step approved-amount math | No |
 | `FraudDetectionAgent` | Same-day / monthly / high-value signals, failure injection | No |
-| `re_verification` (deliberation node) | One-shot retry trigger when extraction confidence is low or validator flagged issues; capped at 1 cycle | No |
+| `re_verification` (deliberation node) | One-shot retry: re-calls the LLM provider on each flagged document with the prior validation issues as `feedback`. Gemini incorporates the feedback and bumps temperature to 0.4; Mock records the feedback on `raw` (deterministic, can't act on it). Capped at 1 cycle. | No |
 | `policy_reconsider` (deliberation node) | Routes claim to human review when fraud raised signals but policy passed cleanly; capped at 1 cycle | No |
 | `DecisionSynthesizerAgent` | Aggregate findings into `Decision` + user message; build explanation tree; compute final confidence; attach cost rollup | Yes |
 
@@ -143,6 +143,35 @@ The eval suite always uses `MockProvider`, so passing 12/12 is reproducible
 without spending tokens. The live demo uses `GeminiProvider` when
 `LLM_PROVIDER=gemini` and `GEMINI_API_KEY` are set; otherwise it falls
 back to `MockProvider` automatically.
+
+### Extraction preview and the one-call-per-upload invariant
+
+The `/submit` form lets the customer upload an image or PDF; the page
+calls `POST /api/claims/extract-preview` with `bytes_b64 + mime_type` and
+runs the configured provider on it. The returned `ExtractedDocument` is
+folded back into the typed fields so the customer can review (and edit)
+before submitting. At final submit time, the form deliberately does
+**not** re-send `bytes_b64`: it only sends the typed `content`. Both
+providers detect this content-only shape and build the
+`ExtractedDocument` directly without invoking an LLM:
+
+- `MockProvider` — content branch echoes `content` (existing behaviour).
+- `GeminiProvider` — a `_is_rich_content` check short-circuits to a
+  zero-cost `ExtractedDocument` built from content; `tokens_in/out=0`,
+  `usd_estimate=0`. This is what makes the invariant hold: exactly one
+  Gemini call per uploaded document across the whole flow.
+
+Uploaded bytes are in-flight only. The SqlAlchemy repository strips
+`bytes_b64` / `mime_type` from every document before persisting
+`ClaimState` to SQLite, so a 5 MB photo can't bloat the DB. Re-opening
+a past claim shows the extracted text, not the original image (image
+storage is intentionally out of scope).
+
+The `extract-preview` endpoint encodes provider failures inline as
+`{ok: false, reason, message}` with HTTP 200, so the form can guide
+the user ("couldn't read this — try a clearer photo") without aborting
+the session. Oversized payloads are rejected at the Pydantic boundary
+(`bytes_b64` validator, ~10 MB cap) before the provider is invoked.
 
 ## Declarative rule engine
 
